@@ -44,5 +44,21 @@
       "name": "English",
       "path": "lang/en.json"
     }
-  ]
+  ],
+  "relationships": {
+    "requires": [
+      {
+        "id": "socketlib",
+        "type": "module"
+      },
+      {
+        "id": "midi-qol",
+        "type": "module"
+      },
+      {
+        "id": "lib-wrapper",
+        "type": "module"
+      }
+    ]
+  }
 }
