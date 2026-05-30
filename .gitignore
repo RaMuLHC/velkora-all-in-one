@@ -4,3 +4,6 @@ Thumbs.db
 
 # LevelDB lock files
 packs/**/LOCK
+
+# Local zip packages
+*.zip
