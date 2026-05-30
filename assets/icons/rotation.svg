@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <linearGradient id="rotation-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3b82f6" />
+      <stop offset="50%" stop-color="#10b981" />
+      <stop offset="100%" stop-color="#fbbf24" />
+    </linearGradient>
+  </defs>
+  <!-- Cyclic Arrows -->
+  <circle cx="256" cy="256" r="200" fill="none" stroke="url(#rotation-grad)" stroke-width="24" stroke-dasharray="350 50" transform="rotate(45 256 256)"/>
+  <circle cx="256" cy="256" r="200" fill="none" stroke="url(#rotation-grad)" stroke-width="24" stroke-dasharray="350 50" transform="rotate(225 256 256)"/>
+  <!-- Arrow Heads -->
+  <polygon points="456,230 456,280 410,256" fill="#fbbf24" stroke="#fbbf24" stroke-width="4"/>
+  <polygon points="56,282 56,232 102,256" fill="#3b82f6" stroke="#3b82f6" stroke-width="4"/>
+  
+  <!-- Four seasons small icons inside -->
+  <!-- Spring: Leaf (Top Left) -->
+  <path d="M180 140 C140 140 130 180 160 200 C190 220 200 180 200 160 Z" fill="#10b981"/>
+  <!-- Summer: Sun (Top Right) -->
+  <circle cx="340" cy="160" r="20" fill="#ef4444"/>
+  <circle cx="340" cy="160" r="30" fill="none" stroke="#ef4444" stroke-width="4" stroke-dasharray="8 8"/>
+  <!-- Autumn: Maple Leaf (Bottom Right) -->
+  <path d="M340 360 L320 340 L340 320 L360 340 Z" fill="#f97316"/>
+  <!-- Winter: Snowflake (Bottom Left) -->
+  <path d="M150 340 L190 340 M170 320 L170 360 M155 325 L185 355 M155 355 L185 325" stroke="#60a5fa" stroke-width="4" stroke-linecap="round"/>
+</svg>

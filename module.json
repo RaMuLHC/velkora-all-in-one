@@ -1,0 +1,45 @@
+{
+  "id": "velkora-all-in-one",
+  "title": "Velkora : All in one automation pack",
+  "description": "Automation module built for Velkora: Guide to the Shattered Reality.",
+  "version": "1.0.8",
+  "compatibility": {
+    "minimum": "13",
+    "verified": "13"
+  },
+  "authors": [
+    {
+      "name": "RaMu"
+    }
+  ],
+  "scripts": [
+    "scripts/tables.js",
+    "scripts/main.js"
+  ],
+  "packs": [
+    {
+      "name": "velkora-all-in-one-compendium",
+      "label": "VELKORA.PackLabel",
+      "path": "packs/velkora-all-in-one-compendium",
+      "type": "Item",
+      "system": "dnd5e"
+    }
+  ],
+  "languages": [
+    {
+      "lang": "zh-tw",
+      "name": "繁體中文",
+      "path": "lang/zh-tw.json"
+    },
+    {
+      "lang": "zh-cn",
+      "name": "简体中文",
+      "path": "lang/zh-cn.json"
+    },
+    {
+      "lang": "en",
+      "name": "English",
+      "path": "lang/en.json"
+    }
+  ]
+}

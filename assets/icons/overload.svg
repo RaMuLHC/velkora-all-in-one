@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <linearGradient id="overload-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ef4444" />
+      <stop offset="50%" stop-color="#f59e0b" />
+      <stop offset="100%" stop-color="#ef4444" />
+    </linearGradient>
+  </defs>
+  <!-- Outer glowing gear or circle -->
+  <circle cx="256" cy="256" r="220" fill="none" stroke="#f59e0b" stroke-width="12" stroke-dasharray="20 15"/>
+  <!-- Central Energy Core -->
+  <circle cx="256" cy="256" r="140" fill="url(#overload-grad)" opacity="0.15"/>
+  <circle cx="256" cy="256" r="100" fill="url(#overload-grad)" opacity="0.3"/>
+  <!-- Lightning Bolt -->
+  <path d="M290 50 L140 270 L260 270 L210 470 L380 230 L260 230 Z" fill="url(#overload-grad)" stroke="#f59e0b" stroke-width="6" stroke-linejoin="round"/>
+</svg>

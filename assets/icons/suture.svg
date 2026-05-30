@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <linearGradient id="suture-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#a855f7" />
+      <stop offset="100%" stop-color="#6b21a8" />
+    </linearGradient>
+  </defs>
+  <!-- Background Shield/Veil -->
+  <path d="M256 32C128 32 64 96 64 224c0 144 144 224 192 256 48-32 192-112 192-256C448 96 384 32 256 32z" fill="url(#suture-grad)" stroke="#c084fc" stroke-width="8"/>
+  <!-- Tearing/Fracture Line down the middle -->
+  <path d="M256 80 L230 180 L280 280 L240 380 L256 430" fill="none" stroke="#2e0854" stroke-width="12" stroke-linejoin="round"/>
+  <!-- Stitches (crossings) -->
+  <line x1="210" y1="130" x2="290" y2="150" stroke="#f472b6" stroke-width="8" stroke-linecap="round"/>
+  <line x1="200" y1="210" x2="310" y2="230" stroke="#f472b6" stroke-width="8" stroke-linecap="round"/>
+  <line x1="210" y1="290" x2="290" y2="310" stroke="#f472b6" stroke-width="8" stroke-linecap="round"/>
+  <line x1="200" y1="360" x2="300" y2="380" stroke="#f472b6" stroke-width="8" stroke-linecap="round"/>
+</svg>

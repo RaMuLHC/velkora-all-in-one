@@ -1,0 +1,238 @@
+{
+  "VELKORA": {
+    "Title": "Velkora : All in one automation pack",
+    "Description": "Automation module built for Velkora: Guide to the Shattered Reality.",
+    "PackLabel": "Velkora: Special Items & Abilities",
+    "Items": {
+      "Suture": {
+        "Name": "Veil Suture",
+        "Description": "When the veil is too severely damaged, the caster can use their own magic as material, forcefully tearing their own soul to pour into the gaps of the veil to repair it.<br><br><b>Action: Veil Suture</b><br>Consuming a bonus action, you can expend one of your spell slots to repair the reality veil of the space you are in.<br><br>The 'Veil Stress' of the current area is reduced by (expended spell slot level * 2) points.<br><br>You suffer the agonizing pain of a torn soul, taking necrotic damage equal to (expended spell slot level)d6. This damage cannot be reduced or avoided by any means. If your hit points are reduced to 0 by this damage, your condition is stabilized and you fall unconscious, while gaining 1 level of exhaustion."
+      },
+      "Rotation": {
+        "Name": "Active Rotation",
+        "Description": "The name and description of this feature will update automatically with your seasonal rotation.",
+        "AutoUpdateHint": "The name and description of this feature will update automatically with your seasonal rotation"
+      },
+      "Overload": {
+        "Name": "Overload Casting",
+        "Description": "A caster can also choose to recklessly overdraw their magic, tearing the veil heavily in exchange for brief, extreme destructive power.<br><br>When a creature expends a spell slot to cast a spell, they can declare 'Overload Casting'. When a spell is cast with 'Overload Casting', the caster can choose one of the following benefits:<br><ul><li><b>Elevation</b>: The spell is cast as if it were 2 levels higher than the expended slot, up to a maximum of 9th level.</li><li><b>Penetration</b>: The caster has advantage on spell attack rolls for the spell, or targets have disadvantage on saving throws against the spell.</li><li><b>Destruction</b>: The damage rolls of the spell take their maximum values instead of being rolled.</li></ul><br>Meanwhile, the spell incurs the following costs after resolution:<br><ul><li>The spell generates double the 'Veil Stress'.</li><li>If the spell triggers a 'Veil Breach', the spell level is treated as doubled for that anomaly check.</li></ul>"
+      }
+    },
+    "Anomalies": {
+      "Breach": {
+        "light": {
+          "label": "Light Anomaly",
+          "1": "【Minor Rift】A minor rift to the elemental planes is torn open, forming a threat zone. The area within a 15-foot radius of the target is treated as difficult terrain, and any creature ending its turn in this area takes 1d6 damage (damage type decided by DM).",
+          "2": "【Gravity Collapse】Gravity collapses in a small area, forming a high-gravitational zone. The area within a 15-foot radius of the target is treated as a gravity anomaly zone: speed is halved, Dexterity saving throws suffer a -5 environmental penalty, and Strength saving throws gain a +5 environmental bonus.",
+          "3": "【Optical Distortion】Light physics distort in a small area, forming a distorted light-and-shadow zone. The area within a 15-foot radius of the target is treated as a light distortion zone: creatures inside suffer a -5 environmental penalty on attack rolls and visual-based Wisdom (Perception) checks. Creatures outside targeting those inside also suffer a -5 environmental penalty on attack rolls.",
+          "4": "【Magic Strain】Surrounding mana suddenly becomes extremely strained, ready to discharge at the slightest stimulus. The area within a 15-foot radius of the target is treated as a static field: a creature casting a cantrip or spell inside takes force damage equal to 1d4 + spell level.",
+          "5": "【Spatial Phase】Space suddenly folds and warps. The target instantly swaps positions with a random creature within 30 feet. If no valid swap target exists, the target takes 2d6 force damage.",
+          "6": "【Life Decay】An area loses its vital essence. The area within a 15-foot radius of the target is treated as a withered zone: no creature within can restore hit points by any means."
+        },
+        "moderate": {
+          "label": "Moderate Anomaly",
+          "1": "【Deadly Breach】A large rift to the elemental planes is torn open, forming a lethal zone. A 20-foot radius area around the target becomes lethal. All creatures inside must make a DC 15 Dexterity saving throw or take 4d6 damage and fall prone; on a success, they take half damage. Any creature ending its turn in this zone takes 2d6 damage (damage type decided by DM).",
+          "2": "【Psychic Shock】An anomalous psychic shock waves out. The target and all creatures within 15 feet must make a DC 15 Wisdom or Intelligence saving throw (attribute decided by DM), or suffer a -5 environmental penalty on saving throws against spell effects for 1 minute.",
+          "3": "【Spell Disruption】The caster's spellcasting focus is disrupted. The target must succeed on a DC 18 Constitution saving throw or lose concentration.",
+          "4": "【Mana Siphon】The breached veil attempts to siphon surrounding mana to repair itself. The target and all creatures within 30 feet must succeed on a DC 15 Charisma saving throw or lose a random unexpended spell slot. If a creature has no spell slots, it loses one Hit Die instead.",
+          "5": "【Destructive Fissures】Destructive fissures split the battlefield. Three 30-foot-long, 5-foot-wide fissures open from the target in random directions. Creatures in their path are pushed to the nearest unoccupied space. Fissures are treated as impassable terrain.",
+          "6": "【Outer Incursion】An entity from the Outer Realm invades. An unaligned monster with a CR equal to half the party's average level appears within 10 feet of the target and attacks indiscriminately until destroyed."
+        },
+        "severe": {
+          "label": "Severe Disaster",
+          "1": "【Mana Drought】Mana within a 60-foot radius of the target is temporarily depleted. Any creature casting a spell using a spell slot in this area takes necrotic damage equal to (spell level)d8. This damage cannot be reduced or avoided by any means.",
+          "2": "【Existential Erasure】The target must succeed on a DC 18 Constitution saving throw or be cursed. A cursed creature's maximum hit points are permanently halved; on a success, the target takes 8d10 force damage instead.",
+          "3": "【They Are Coming...】A monster from the Outer Realm with a CR equal to the party's average level + 1 appears within 10 feet of the target. At the end of the current turn, the monster can immediately take a legendary action: either move up to its speed or make one attack.",
+          "4": "【Reality Collapse】Reality collapses, tearing open an expanding miniature black hole under the target's feet. The black hole's radius starts at 5 feet and expands by 10 feet at the end of each round. Any creature ending its turn inside the black hole dies.",
+          "5": "【Mana Silence】Magic dies. The target and all creatures within 30 feet must succeed on a DC 18 Charisma saving throw or temporarily lose the ability to cast spells for 24 hours; on a success, they lose it for 1 hour instead.",
+          "6": "【Force Shockwave】A shockwave bursts outward from the target in a 30-foot radius. All creatures in the area must succeed on a Strength or Dexterity saving throw or take 10d6 force damage and be knocked back 30 feet; on a success, they take half damage and are not knocked back."
+        },
+        "Unknown": "An unknown disaster sweeps in."
+      },
+      "Critical": {
+        "1": "【Inverted Shadows】: The shadows of all creatures and objects in the area no longer follow physical light sources, but instead point uniformly toward the nearest caster (or outer creature); on close inspection, the edges of the shadows wriggle slightly like living things.",
+        "2": "【Micro-Gravity Delamination】: The gravity of the space begins to show subtle anomalies. Blood, dust, gravel, or light debris on the battlefield slowly and contrary to common sense float toward the ceiling.",
+        "3": "【Aetheric Rust】: A strong taste of rust and old coins suddenly wells up in everyone's mouth. For weaker characters, tiny black streaks of blood may ooze from the corners of their nose or eyes.",
+        "4": "【Sickly Illumination】: The flames of all non-magical light sources (torches, lanterns) in the area instantly turn into a sickly blue or pale green, and no longer emit any heat. When light hits objects, the edges flicker like static noise.",
+        "5": "【The Straining Glass】: A high-frequency friction sound starts to echo in the air, as if everyone is inside a glass sphere thousands of meters under the deep sea, hearing the outer shell creak under extreme water pressure, ready to shatter at any moment.",
+        "6": "【Spatial Vertigo】: Visual and spatial senses undergo a brief dislocation. The straight-line distance in front of you appears naturally stretched; even when standing still, everyone feels a strong sensation of falling and dizziness (does not affect actual movement grid count, but severely interferes with the mind).",
+        "7": "【Accelerated Decay】: Fragile organic matter in the area begins to decay under the friction of reality. Wood surfaces instantly grow rotten white spots, and tiny insects or weeds nearby wither and turn to ashes in seconds.",
+        "8": "【Abyssal Echoes】: The air density in the area changes. When anyone speaks, metal clashes, or casts spells, a creepy double echo is generated. The second echo sounds as if it is coming from deep underwater, carrying an ineffable malice.",
+        "Unknown": "An unknown critical anomaly."
+      }
+    },
+    "Rhythm": {
+      "Spring": {
+        "name": "Spring",
+        "harmony": "Your melee weapon attack range and the range of spells with a range of 'Touch' increase by 5 feet.",
+        "pulse": "You gain temporary hit points equal to twice the spell's level."
+      },
+      "Summer": {
+        "name": "Summer",
+        "harmony": "Your movement speed increases by 10 feet. Your jumps no longer require a running start to reach maximum distance.",
+        "pulse": "When rolling damage or healing for this spell, you can reroll all results of '1'. You must use the second result regardless of the outcome."
+      },
+      "Autumn": {
+        "name": "Autumn",
+        "harmony": "You gain resistance to necrotic damage. You have advantage on Constitution saving throws to resist or end the poisoned condition.",
+        "pulse": "This spell ignores one damage resistance of your choice on the target."
+      },
+      "Winter": {
+        "name": "Winter",
+        "harmony": "You are immune to the prone condition. You have advantage on saving throws against involuntary displacement effects.",
+        "pulse": "A 10-foot area centered on you is covered in frost. The movement speed of creatures in the area is halved, and they must succeed on a Dexterity saving throw (against your spell DC) when using the Dash or Disengage action, or the action fails and is expended."
+      }
+    },
+    "HUD": {
+      "PrimalRhythmTitle": "Primal Rhythm",
+      "StableState": "Stable State",
+      "CriticalStage": "Critical Stage",
+      "StageWarnings": "Stage Warnings",
+      "StressValue": "Veil Stress",
+      "Threshold": "Threshold",
+      "Scabs": "Scabs",
+      "Close": "Close",
+      "Confirm": "Confirm",
+      "Cancel": "Cancel",
+      "Undo": "Undo",
+      "UndoHint": "Undo this change",
+      "Title": "Velkora: Veil Monitoring Panel",
+      "History": "Veil Settlement Log",
+      "Settings": "Configuration Settings",
+      "BaseThreshold": "Base Threshold",
+      "EnvModifier": "Env Modifier",
+      "CurrentThreshold": "Current Total Threshold",
+      "ResetBtn": "Reset Data Manually",
+      "SetThreshold": "Confirm Settings",
+      "AdjustStress": "Adjust Stress Manually",
+      "ScabCount": "Scab Count",
+      "ExhaustionLevel": "Current Exhaustion Level",
+      "ApplySuture": "Veil Suture",
+      "ActiveRotation": "Active Rotation",
+      "OverloadCasting": "Overload Casting",
+      "OverloadStatus": "Overload Status",
+      "PartyRhythmStatus": "Party Rhythm Status",
+      "PrevSeason": "Previous Season",
+      "NextSeason": "Next Season",
+      "CurrentStatus": "Current Status",
+      "AdjustStressShort": "{val} Stress",
+      "NoCastHistory": "No settlement log yet",
+      "ClearLogs": "[Clear Logs]",
+      "RulesCheatSheet": "📜 Rules Cheat Sheet",
+      "CriticalTableTitle": "【Critical Point Anomaly Table】(1d8)",
+      "BreachTableTitle": "【Veil Breaching Table】(1d6)",
+      "LightAnomalyTitle": "Light Anomaly (Check 1-14)",
+      "ModerateAnomalyTitle": "Moderate Anomaly (Check 15-22)",
+      "SevereAnomalyTitle": "Severe Disaster (Check 23+)",
+      "PrimalRhythmTableTitle": "【Seasonal Rhythm Table】(Primal Magic)",
+      "HarmonyLabel": "Harmony: ",
+      "PulseLabel": "Pulse: ",
+      "NoTable": "Unable to load data tables. Please verify tables.js is loaded.",
+      "CastSpell": "Cast",
+      "SpellLevelSuffix": "",
+      "OverloadLevelInfo": "upcast to level {to}, from level {from}"
+    },
+    "Notifications": {
+      "NoToken": "Please select a Primal Caster (Druid/Ranger) token first, or bind your character in the bottom-left corner.",
+      "NoControl": "You do not have control permission for this token.",
+      "NoTokenOrActor": "Cannot find the token or its corresponding actor.",
+      "GmOnly": "Only the DM can open the Veil Monitoring Panel.",
+      "NoSutureSlots": "You have no spell slots available for Veil Suture!",
+      "SelectResistance": "Please select a damage resistance type to ignore first!",
+      "NoActiveGm": "No active DM online, cannot update Veil Stress.",
+      "NoActiveGmSuture": "No active DM online, cannot execute Veil Suture.",
+      "OnlyInCombat": "Seasonal rotation can only be performed in combat!",
+      "SutureUndo": "Veil Suture cost undone for {name}: restored {hp} HP and {temp} Temp HP.",
+      "SutureExhaustion": "⚠️ Hit points reduced to 0! Condition stabilized but fell unconscious, and gained 1 level of exhaustion."
+    },
+    "Dialog": {
+      "Threshold": {
+        "Title": "Combat Start: Veil Threshold Setting",
+        "AvgLevel": "Detected average party level: ",
+        "SuggestBase": "System suggested base threshold: ",
+        "EnvModifier": "Environmental Modifier (supports + or -): ",
+        "ConfirmHint": "(Confirming will automatically reset Scab Count and Stress Value to 0)",
+        "Confirm": "Confirm Settings"
+      },
+      "Overload": {
+        "Title": "Declaration: Overload Casting ({name})",
+        "Content": "Pushing the arcane core to its limit, the next spell cast will generate <b>double Veil Stress</b>. Choose your Overload effect:",
+        "Elevation": "⬆️ Elevation (expends original slot, power +2 levels)",
+        "Penetration": "🎯 Penetration (advantage on attack / disadvantage on saves)",
+        "OverloadChoice": "Elevation",
+        "Destruction": "💥 Destruction (damage rolls take maximum value)",
+        "Confirm": "Confirm Overload"
+      },
+      "Suture": {
+        "Title": "🛠️ Veil Suture ({name})",
+        "Content": "Forcefully filling the cracks of reality with your mana and soul. This will deal unpreventable <b>necrotic damage</b> (1d6 per slot level).",
+        "SelectSlot": "Select spell slot to expend:",
+        "PactSlot": "Pact Slot Level {level} (Remaining: {value})",
+        "SpellSlot": "Level {level} Slot (Remaining: {value})",
+        "Execute": "Execute Suture"
+      },
+      "Autumn": {
+        "Title": "🍂 Autumn Pulse: Ignore Resistance",
+        "Confirm": "Confirm Selection"
+      }
+    },
+    "Chat": {
+      "ItemDispatched": "🆕 Dispatched <b>[{item}]</b> to <b>{actor}</b>.",
+      "ItemUpdated": "🔄 Updated <b>{actor}</b>'s feature <b>[{item}]</b> to the latest version.",
+      "ItemUpdateTitle": "🔄 Feature Dispatch & Update Notifications",
+      "SystemName": "Veil System",
+      "CurrentSeason": "Current Season",
+      "SeasonalHarmony": "Seasonal Harmony (Passive effect applied)",
+      "SeasonalPulse": "Seasonal Pulse (Spell burst)",
+      "RotationReason": {
+        "Cast": "Spell Resonance",
+        "Active": "Active Rotation",
+        "Init": "Combat Initiative",
+        "Override": "Manual Override",
+        "GmControl": "DM Remote"
+      },
+      "RotationTitle": "🌿 Seasonal Rotation ({reason})",
+      "RotationBody": "Magic circuit progressed to: ",
+      "HarmonyActive": "Seasonal Harmony (Passive effect applied)",
+      "PulseTitle": "🌿 Seasonal Pulse: {name}",
+      "SutureTitle": "🩸 Soul Rend",
+      "SutureBody": "{level}d6={damage}, [{name}] takes <b>{damage} points</b> of absolute necrotic damage!",
+      "ExhaustionBody": "And gained <b>1 level of exhaustion</b>!",
+      "OverloadTitle": "⚠️ Declaring Overload Casting!",
+      "OverloadBody": "The arcane core is pushed to the limit, preparing to release: <b>{choice}</b>!",
+      "OverloadBuffDesc": "The next spell cast will generate double stress, but gains the [{choice}] effect.",
+      "OverloadBuffName": "Overload Casting: {choice}",
+      "OverloadExtraWarning": "<p style='color: darkred; font-weight: bold; margin-top: 5px;'><i class='fas fa-exclamation-triangle'></i> Note: This spell does no damage; the Destruction effect will not apply!</p>",
+      "SutureLogTitle": "Veil Suture (Level {level})",
+      "SutureLogHp": "<div style='color: #c084fc; font-size: 0.9em; margin-top: 4px;'><i class='fas fa-tint'></i> Suffered {damage} points of flesh cost</div>",
+      "ScabTitle": "⚠️ Veil Breached! ({label} - Rolled {roll})",
+      "ScabNewThreshold": "(Scab created, new total threshold: {threshold})",
+      "CriticalTitle": "👁️ Critical Point Anomaly Triggered! (Rolled {roll})",
+      "SaveTitle": "{name} - Dexterity Saving Throw vs DC {dc}",
+      "SaveResult": "Result: <b>{total}</b> ➜ <span style='color: {color}; font-weight: bold;'>{result}</span>",
+      "SaveSuccess": "Success (Half Damage)",
+      "SaveEvasion": "Success (Evasion/Improved Evasion, No Damage)",
+      "SaveFailure": "Failure (Full Damage)",
+      "SaveSuccessShort": "Success",
+      "SaveFailureAction": "Failure (Action expended and execution failed!)",
+      "WinterSlowEffectName": "❄️ Winter Slow",
+      "WinterZoneReminderTitle": "❄️ Winter Frost Zone Reminder",
+      "WinterZoneReminderBody": "<b>{name}</b> starts their turn in the frost zone of <b>{casters}</b>:",
+      "WinterZoneSpeedHalf": "Movement speed is <b>halved</b> (effect applied automatically).",
+      "WinterZoneSaveInfo": "Using the Dash or Disengage action requires a Dexterity saving throw (against caster's spell DC), or the action fails and is expended.",
+      "WinterZoneSaveDc": "Dexterity Save DC: {dc}",
+      "WinterZoneRollBtn": "🎲 Roll Dexterity Saving Throw (DC {dc})",
+      "WinterZoneCommand": "System Shortcut: [[/save dex dc={dc}]]",
+      "SlowApplied": "Winter Slow effect applied to {name}",
+      "SlowRemoved": "{name} has left the frost zone; Winter Slow effect removed.",
+      "FvttVersionWarn": "[Velkora : All-in-One] Detected new turn, but since {name} is out of combat, ignoring Winter Slow state cleanup."
+    },
+    "Settings": {
+      "LanguageOverride": {
+        "Name": "Language Override",
+        "Hint": "If the module fails to automatically detect your system language, you can manually override it here (changing this will automatically reload the page).",
+        "Auto": "Auto (System Default)"
+      }
+    }
+  }
+}
