@@ -1814,8 +1814,18 @@ Hooks.on("midi-qol.RollComplete", async (workflow) => {
 
             const originalLevel = (overloadType === "Elevation" && overloadOriginalLevel !== undefined) ? overloadOriginalLevel : baseSpellLevel;
 
-            // 壓力結算環階：升階（Elevation）時應使用升階後的環階 (baseSpellLevel)；其他情況使用 originalLevel
-            const stressLevel = baseSpellLevel;
+            // 計算實際/升階後的環階 (解決 Midi-QOL 在 RollComplete 時將 spellLevel 重置為消耗法術位環階的問題)
+            let actualSpellLevel = baseSpellLevel;
+            if (overloadType === "Elevation" && overloadOriginalLevel !== undefined) {
+                if (overloadOriginalLevel === 8) {
+                    actualSpellLevel = 9;
+                } else if (overloadOriginalLevel <= 7 && overloadOriginalLevel > 0) {
+                    actualSpellLevel = overloadOriginalLevel + 2;
+                }
+            }
+
+            // 壓力結算環階：升階（Elevation）時應使用升階後的環階 (actualSpellLevel)；其他情況使用 originalLevel
+            const stressLevel = actualSpellLevel;
 
             if (stressLevel > 0) {
                 const finalStress = stressLevel * (isOverloaded ? 2 : 1);
@@ -1825,10 +1835,10 @@ Hooks.on("midi-qol.RollComplete", async (workflow) => {
                     const choiceLabel = game.i18n.localize(`VELKORA.Dialog.Overload.${overloadType}`).split(" (")[0];
                     let levelInfo = "";
                     if (overloadType === "Elevation") {
-                        levelInfo = game.i18n.format("VELKORA.HUD.OverloadLevelInfo", { to: baseSpellLevel, from: originalLevel }) || `威力提升至 ${baseSpellLevel} 環，原 ${originalLevel} 環`;
+                        levelInfo = game.i18n.format("VELKORA.HUD.OverloadLevelInfo", { to: actualSpellLevel, from: originalLevel }) || `威力提升至 ${actualSpellLevel} 環，原 ${originalLevel} 環`;
                     } else {
                         const suffix = game.i18n.localize("VELKORA.HUD.SpellLevelSuffix") || "環";
-                        levelInfo = `${baseSpellLevel}${suffix}`;
+                        levelInfo = `${actualSpellLevel}${suffix}`;
                     }
                     actionText = `${game.i18n.localize("VELKORA.HUD.OverloadCasting")}[${choiceLabel}]：${item.name} (${levelInfo})`;
                 } else {
