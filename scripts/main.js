@@ -1247,15 +1247,26 @@ Hooks.on("dnd5e.preUseActivity", (activity, usageConfig, dialogConfig, messageCo
                        item.name === "主动轮转" || item.name.startsWith("主动轮转") ||
                        item.name === "Active Rotation" || item.name.startsWith("Active Rotation");
 
+    const lockObj = game.actors.get(actor.id) || actor;
+
     if (isOverloadItem) {
+        if (lockObj._velkoraUsingOverload) return false;
+        lockObj._velkoraUsingOverload = true;
+        setTimeout(() => delete lockObj._velkoraUsingOverload, 500);
         handleOverloadUse(actor);
         return false;
     }
     if (isSuture) {
+        if (lockObj._velkoraUsingSuture) return false;
+        lockObj._velkoraUsingSuture = true;
+        setTimeout(() => delete lockObj._velkoraUsingSuture, 500);
         handleSutureUse(actor);
         return false;
     }
     if (isRotation) {
+        if (lockObj._velkoraUsingRotation) return false;
+        lockObj._velkoraUsingRotation = true;
+        setTimeout(() => delete lockObj._velkoraUsingRotation, 500);
         handleRotationUse(actor);
         return false;
     }
@@ -1315,6 +1326,46 @@ Hooks.on("dnd5e.preUseActivity", (activity, usageConfig, dialogConfig, messageCo
         foundry.utils.setProperty(mConfig, "data.system.spellLevel", targetLevel);
         foundry.utils.setProperty(mConfig, "data.system.scaling", uConfig.scaling);
     };
+});
+
+// ==========================================
+// ⭐ 核心過載管理：Midi-QOL 攔截以防止目標被強制轉向玩家自己
+// ==========================================
+Hooks.on("midi-qol.preTargeting", (workflow) => {
+    const actor = workflow.actor;
+    const item = workflow.item;
+    if (!actor || !item) return;
+
+    const isOverloadItem = item.flags?.["velkora-all-in-one"]?.isOverload || item.name === "過載施法" || item.name === "过载施法" || item.name === "Overload Casting";
+    const isSuture = item.flags?.["velkora-all-in-one"]?.isSuture || item.name === "屏障縫合" || item.name === "屏障缝合" || item.name === "Veil Suture" || item.name === "Barrier Suture";
+    const isRotation = item.flags?.["velkora-all-in-one"]?.isRotation || 
+                       item.name === "主動輪轉" || item.name.startsWith("主動輪轉") ||
+                       item.name === "主动轮转" || item.name.startsWith("主动轮转") ||
+                       item.name === "Active Rotation" || item.name.startsWith("Active Rotation");
+
+    const lockObj = game.actors.get(actor.id) || actor;
+
+    if (isOverloadItem) {
+        if (lockObj._velkoraUsingOverload) return false;
+        lockObj._velkoraUsingOverload = true;
+        setTimeout(() => delete lockObj._velkoraUsingOverload, 500);
+        handleOverloadUse(actor);
+        return false;
+    }
+    if (isSuture) {
+        if (lockObj._velkoraUsingSuture) return false;
+        lockObj._velkoraUsingSuture = true;
+        setTimeout(() => delete lockObj._velkoraUsingSuture, 500);
+        handleSutureUse(actor);
+        return false;
+    }
+    if (isRotation) {
+        if (lockObj._velkoraUsingRotation) return false;
+        lockObj._velkoraUsingRotation = true;
+        setTimeout(() => delete lockObj._velkoraUsingRotation, 500);
+        handleRotationUse(actor);
+        return false;
+    }
 });
 
 // ==========================================
@@ -1514,8 +1565,11 @@ Hooks.on("midi-qol.RollComplete", async (workflow) => {
 
             const originalLevel = (overloadType === "Elevation" && overloadOriginalLevel !== undefined) ? overloadOriginalLevel : baseSpellLevel;
 
-            if (originalLevel > 0) {
-                const finalStress = originalLevel * (isOverloaded ? 2 : 1);
+            // 壓力結算環階：升階（Elevation）時應使用升階後的環階 (baseSpellLevel)；其他情況使用 originalLevel
+            const stressLevel = baseSpellLevel;
+
+            if (stressLevel > 0) {
+                const finalStress = stressLevel * (isOverloaded ? 2 : 1);
                 
                 let actionText = "";
                 if (isOverloaded) {
@@ -1575,7 +1629,7 @@ Hooks.on("midi-qol.RollComplete", async (workflow) => {
 // ==========================================
 async function applySutureExecution(actor, actorName, spellLevel) {
     const damageRoll = new Roll(`${spellLevel}d6`);
-    await damageRoll.evaluate({async: true});
+    await damageRoll.evaluate();
     const damage = damageRoll.total;
     
     let tempHp = actor.system.attributes?.hp?.temp || 0;
@@ -1691,9 +1745,9 @@ async function processStress(amount, effectiveSpellLevel, actorName = "系統", 
         scabIncrease = 1;
         log(`壓力達到或超過閾值，觸發屏障破裂！`, "warn");
         const anomalyRoll = new Roll(`1d20 + ${effectiveSpellLevel} + ${scabCount}`);
-        await anomalyRoll.evaluate({async: true});
+        await anomalyRoll.evaluate();
         const d6Roll = new Roll(`1d6`);
-        await d6Roll.evaluate({async: true});
+        await d6Roll.evaluate();
 
         const total = anomalyRoll.total;
         let severityLevel = "light", txtColor = "#fcd34d";
@@ -1722,7 +1776,7 @@ async function processStress(amount, effectiveSpellLevel, actorName = "系統", 
         const crossedHalfway = (currentStress < halfThreshold) && (newValue >= halfThreshold);
         if (crossedHalfway && actualChange > 0) {
             const d8Roll = new Roll(`1d8`);
-            await d8Roll.evaluate({async: true});
+            await d8Roll.evaluate();
             
             let anomalyText = "VELKORA.Anomalies.Critical.Unknown";
             if (CONFIG.Velkora && CONFIG.Velkora.CRITICAL_ANOMALIES) {
