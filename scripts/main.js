@@ -1331,9 +1331,19 @@ Hooks.on("dnd5e.preUseActivity", (activity, usageConfig, dialogConfig, messageCo
 // ==========================================
 // ⭐ 核心過載管理：Midi-QOL 攔截以防止目標被強制轉向玩家自己
 // ==========================================
-Hooks.on("midi-qol.preTargeting", (workflow) => {
-    const actor = workflow.actor;
-    const item = workflow.item;
+Hooks.on("midi-qol.preTargeting", (arg) => {
+    if (!arg) return;
+    let actor = arg.actor;
+    let item = arg.item;
+
+    if (arg.activity) {
+        actor = arg.activity.actor;
+        item = arg.activity.item;
+    } else if (arg.workflow) {
+        actor = arg.workflow.actor;
+        item = arg.workflow.item;
+    }
+
     if (!actor || !item) return;
 
     const isOverloadItem = item.flags?.["velkora-all-in-one"]?.isOverload || item.name === "過載施法" || item.name === "过载施法" || item.name === "Overload Casting";
@@ -1372,8 +1382,12 @@ Hooks.on("midi-qol.preTargeting", (workflow) => {
 // ⭐ 核心過載管理：Midi-QOL 施法升階等級修正
 // ==========================================
 Hooks.on("midi-qol.preItemRoll", async (workflow) => {
-    const actor = workflow.actor;
-    const item = workflow.item;
+    let actor = workflow.actor;
+    let item = workflow.item;
+    if (workflow.activity) {
+        actor = workflow.activity.actor;
+        item = workflow.activity.item;
+    }
     if (!actor || !item || item.type !== "spell") return;
 
     // 檢查是否有過載升階 buff (使用 getFlag)
@@ -1406,8 +1420,12 @@ Hooks.on("midi-qol.RollComplete", async (workflow) => {
     const rollingUser = workflow.user || game.users.get(workflow.userId);
     if (rollingUser && rollingUser.id !== game.user.id) return;
 
-    const actor = workflow.actor;
-    const item = workflow.item;
+    let actor = workflow.actor;
+    let item = workflow.item;
+    if (workflow.activity) {
+        actor = workflow.activity.actor;
+        item = workflow.activity.item;
+    }
     if (!actor || !item) return;
 
     if (item.type === "spell") {
