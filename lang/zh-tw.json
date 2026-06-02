@@ -130,7 +130,7 @@
       "NoTable": "無法讀取數據表，請確認 tables.js 是否成功載入。",
       "CastSpell": "施放",
       "SpellLevelSuffix": "環",
-      "OverloadLevelInfo": "威力升至 {to} 環，原 {from} 環"
+      "OverloadLevelInfo": "威力提升至 {to} 環，原 {from} 環"
     },
     "Notifications": {
       "NoToken": "請先選擇一個原初施法者 (德魯伊/遊俠) 的標記，或在左下角綁定您的角色。",

@@ -1297,8 +1297,16 @@ Hooks.on("dnd5e.preActivityConsumption", (activity, usageConfig, messageConfig) 
     // 過載升階僅限於大於 0 環的法術 (排除戲法)
     if (item.system?.level === 0) return;
 
-    // 獲取原始所選環階
-    let originalLevel = usageConfig.spell?.level || item.system.level || 0;
+    // 獲取原始所選環階 (優先從已選法術位中查找其對應環階，避免 usageConfig.spell?.level 未定義的情況)
+    let originalLevel = item.system.level || 0;
+    if (usageConfig.spell?.slot) {
+        const slotLevel = actor.system.spells?.[usageConfig.spell.slot]?.level;
+        if (slotLevel !== undefined) {
+            originalLevel = slotLevel;
+        }
+    } else if (usageConfig.spell?.level !== undefined) {
+        originalLevel = usageConfig.spell.level;
+    }
     
     // 計算過載升階目標環階：
     // 9環 -> 不變； 8環 -> 9環 (+1)； 1-7環 -> +2 環
@@ -1329,6 +1337,16 @@ Hooks.on("dnd5e.preActivityConsumption", (activity, usageConfig, messageConfig) 
     if (messageConfig) {
         foundry.utils.setProperty(messageConfig, "data.system.spellLevel", targetLevel);
         foundry.utils.setProperty(messageConfig, "data.system.scaling", usageConfig.scaling);
+    }
+
+    // 關鍵修復：由於 preActivityConsumption 執行在 _prepareUsageScaling 之後，
+    // 我們必須手動將升階後的 scaling 寫入複製的 item flags 裡，否則傷害/效果無法正確以升階後的數據投骰。
+    if (item && usageConfig.scaling !== item.flags.dnd5e?.scaling) {
+        item.actor._embeddedPreparation = true;
+        item.updateSource({ "flags.dnd5e.scaling": usageConfig.scaling });
+        delete item.actor._embeddedPreparation;
+        item.prepareFinalAttributes();
+        log(`[preActivityConsumption] 已成功同步更新 cloned item scaling 至 ${usageConfig.scaling}`, "info");
     }
 });
 
@@ -1417,7 +1435,19 @@ const preItemRollHandler = async (arg1, arg2, arg3) => {
     // 排除戲法
     if (item.system?.level === 0) return;
 
-    const originalLevel = workflow ? workflow.spellLevel : (config?.spell?.level || item.system.level);
+    // 獲取原始所選環階 (相容 V1 和 V2 簽名，並能正確從 spells 數據中提取實際所選法術位環階)
+    let originalLevel = item.system.level || 0;
+    if (workflow && workflow.spellLevel !== undefined) {
+        originalLevel = workflow.spellLevel;
+    } else if (config && config.spell?.slot) {
+        const slotLevel = actor.system.spells?.[config.spell.slot]?.level;
+        if (slotLevel !== undefined) {
+            originalLevel = slotLevel;
+        }
+    } else if (config && config.spell?.level !== undefined) {
+        originalLevel = config.spell.level;
+    }
+
     let targetLevel = originalLevel;
     if (originalLevel === 8) {
         targetLevel = 9;
@@ -1425,17 +1455,39 @@ const preItemRollHandler = async (arg1, arg2, arg3) => {
         targetLevel = originalLevel + 2;
     }
 
+    if (targetLevel === originalLevel) return;
+
     log(`[Midi PreItemRoll] Overload Elevation: originalLevel=${originalLevel} -> targetLevel=${targetLevel}`, "info");
+
+    // 儲存原始環階於 Actor 的 Flag 中，確保 RollComplete 壓力結算正確
+    actor.setFlag("velkora-all-in-one", "overloadOriginalLevel", originalLevel);
+    const baseActor = game.actors.get(actor.id);
+    if (baseActor && baseActor !== actor) {
+        baseActor.setFlag("velkora-all-in-one", "overloadOriginalLevel", originalLevel);
+    }
 
     if (workflow) {
         workflow.spellLevel = targetLevel;
         if (workflow.castData) {
             workflow.castData.castLevel = targetLevel;
         }
+        // 同時更新 Midi-QOL 複製的 item 上的 scaling 旗標，確保傷害公式計算能正常升階
+        if (workflow.item) {
+            const scaling = Math.max(0, targetLevel - item.system.level);
+            workflow.item.updateSource({ "flags.dnd5e.scaling": scaling });
+            workflow.item.prepareFinalAttributes();
+        }
+        if (workflow.activity?.item) {
+            const scaling = Math.max(0, targetLevel - item.system.level);
+            workflow.activity.item.updateSource({ "flags.dnd5e.scaling": scaling });
+            workflow.activity.item.prepareFinalAttributes();
+        }
     }
 
-    if (config && config.spell) {
-        config.spell.level = targetLevel;
+    if (config) {
+        if (config.spell) {
+            config.spell.level = targetLevel;
+        }
         config.scaling = Math.max(0, targetLevel - item.system.level);
     }
 };
