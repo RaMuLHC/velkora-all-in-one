@@ -27,6 +27,45 @@ function isPrimalCaster(actor) {
 }
 
 // ==========================================
+// 🛡️ 過載效果尋找輔助函數 (Overload Buff Lookup Helper)
+// ==========================================
+function findOverloadBuff(actor, type = null) {
+    if (!actor) return null;
+    const findFn = e => {
+        const isBuff = e.getFlag?.("velkora-all-in-one", "isOverloadBuff") || e.flags?.["velkora-all-in-one"]?.isOverloadBuff;
+        if (!isBuff) return false;
+        if (type) {
+            const overloadType = e.getFlag?.("velkora-all-in-one", "overloadType") || e.flags?.["velkora-all-in-one"]?.overloadType;
+            return overloadType === type;
+        }
+        return true;
+    };
+
+    // 1. 檢查角色本身效果
+    let effect = actor.effects?.find(findFn);
+    if (effect) return effect;
+
+    // 2. 如果是 Synthetic Actor，檢查其 Base Actor
+    const baseActor = game.actors?.get(actor.id);
+    if (baseActor && baseActor !== actor) {
+        effect = baseActor.effects?.find(findFn);
+        if (effect) return effect;
+    }
+
+    // 3. 如果是 Base Actor，檢查其場景上 Token 實體對應的 Actor
+    const tokens = actor.getActiveTokens ? actor.getActiveTokens() : [];
+    for (const token of tokens) {
+        if (token.actor && token.actor !== actor) {
+            effect = token.actor.effects?.find(findFn);
+            if (effect) return effect;
+        }
+    }
+
+    return null;
+}
+
+
+// ==========================================
 // ⚙️ 除錯模式與日誌封裝 (Debug Mode & Logging Wrapper)
 // ==========================================
 function log(message, level = "info", force = false, style = null) {
@@ -736,6 +775,39 @@ Hooks.on("midi-qol.preDamageRoll", async (workflow) => {
     const actor = workflow.actor;
     const item = workflow.item;
     if (!actor || !item || item.type !== "spell") return;
+
+    // 檢查是否有過載升階 buff 或是已記錄的 overloadOriginalLevel 旗標
+    const overloadOriginalLevel = actor.getFlag("velkora-all-in-one", "overloadOriginalLevel") || 
+                                  (actor.token ? actor.token.actor.getFlag("velkora-all-in-one", "overloadOriginalLevel") : undefined);
+    
+    if (overloadOriginalLevel !== undefined) {
+        // 這是過載升階施法！在傷害計算前，再次強制同步 workflow 的 spellLevel
+        let targetLevel = overloadOriginalLevel;
+        if (overloadOriginalLevel === 8) {
+            targetLevel = 9;
+        } else if (overloadOriginalLevel <= 7 && overloadOriginalLevel > 0) {
+            targetLevel = overloadOriginalLevel + 2;
+        }
+        
+        if (targetLevel !== overloadOriginalLevel) {
+            log(`[Midi preDamageRoll] 檢測到過載升階。強制將 workflow.spellLevel 從 ${workflow.spellLevel} 變更為 ${targetLevel}`, "info", true);
+            workflow.spellLevel = targetLevel;
+            if (workflow.castData) {
+                workflow.castData.castLevel = targetLevel;
+            }
+            
+            const scaling = Math.max(0, targetLevel - item.system.level);
+            if (workflow.item) {
+                workflow.item.updateSource({ "flags.dnd5e.scaling": scaling });
+                workflow.item.prepareFinalAttributes();
+            }
+            if (workflow.activity?.item) {
+                workflow.activity.item.updateSource({ "flags.dnd5e.scaling": scaling });
+                workflow.activity.item.prepareFinalAttributes();
+            }
+        }
+    }
+
     const isPrimal = isPrimalCaster(actor);
     const currentSeason = actor.getFlag("velkora-all-in-one", "currentSeason") || 1;
     const spellLevel = workflow.castData?.castLevel || workflow.spellLevel || item.system.level || 0;
@@ -1271,8 +1343,8 @@ Hooks.on("dnd5e.preUseActivity", (activity, usageConfig, dialogConfig, messageCo
         return false;
     }
 
-    // 檢查是否有過載升階 buff (使用 getFlag 確保相容性)
-    const overloadEffect = actor.effects.find(e => e.getFlag?.("velkora-all-in-one", "isOverloadBuff") && e.getFlag?.("velkora-all-in-one", "overloadType") === "Elevation");
+    // 檢查是否有過載升階 buff (使用 getFlag 與 raw flags 雙重尋找)
+    const overloadEffect = findOverloadBuff(actor, "Elevation");
     if (overloadEffect) {
         // 過載升階僅限於大於 0 環的法術 (排除戲法)
         if (activity.item?.type === "spell" && activity.item?.system?.level !== 0) {
@@ -1284,29 +1356,38 @@ Hooks.on("dnd5e.preUseActivity", (activity, usageConfig, dialogConfig, messageCo
 // ==========================================
 // ⭐ 核心過載管理：施法升階 (preActivityConsumption 攔截)
 // ==========================================
-Hooks.on("dnd5e.preActivityConsumption", (activity, usageConfig, messageConfig) => {
+Hooks.on("dnd5e.preActivityConsumption", async (activity, usageConfig, messageConfig) => {
+    console.log("[Velkora] preActivityConsumption hook fired.", { activity, usageConfig, messageConfig });
     const actor = activity.actor;
     if (!actor) return;
     const item = activity.item;
     if (!item || item.type !== "spell") return;
 
-    // 檢查是否有過載升階 buff (使用 getFlag 確保相容性)
-    const overloadEffect = actor.effects.find(e => e.getFlag?.("velkora-all-in-one", "isOverloadBuff") && e.getFlag?.("velkora-all-in-one", "overloadType") === "Elevation");
+    // 檢查是否有過載升階 buff (使用 getFlag 與 raw flags 雙重尋找)
+    const overloadEffect = findOverloadBuff(actor, "Elevation");
+    console.log("[Velkora] preActivityConsumption overloadEffect found:", overloadEffect);
     if (!overloadEffect) return;
 
     // 過載升階僅限於大於 0 環的法術 (排除戲法)
     if (item.system?.level === 0) return;
 
-    // 獲取原始所選環階 (優先從已選法術位中查找其對應環階，避免 usageConfig.spell?.level 未定義的情況)
+    // 獲取原始所選環階與 slot 名稱
+    let originalSlot = usageConfig.spell?.slot;
     let originalLevel = item.system.level || 0;
-    if (usageConfig.spell?.slot) {
-        const slotLevel = actor.system.spells?.[usageConfig.spell.slot]?.level;
+    let isPact = false;
+
+    if (originalSlot === "pact") {
+        isPact = true;
+        originalLevel = actor.system.spells?.pact?.level || 0;
+    } else if (originalSlot && originalSlot.startsWith("spell")) {
+        const slotLevel = actor.system.spells?.[originalSlot]?.level;
         if (slotLevel !== undefined) {
             originalLevel = slotLevel;
         }
     } else if (usageConfig.spell?.level !== undefined) {
         originalLevel = usageConfig.spell.level;
     }
+    console.log("[Velkora] preActivityConsumption originalLevel calculated:", originalLevel);
     
     // 計算過載升階目標環階：
     // 9環 -> 不變； 8環 -> 9環 (+1)； 1-7環 -> +2 環
@@ -1319,7 +1400,7 @@ Hooks.on("dnd5e.preActivityConsumption", (activity, usageConfig, messageConfig) 
 
     if (targetLevel === originalLevel) return;
 
-    log(`[preActivityConsumption] 檢測到 ${actor.name} 宣告過載施法：法術升階。原始消耗環階=${originalLevel} ➜ 升階後環階=${targetLevel}`, "info");
+    console.log(`[Velkora] [preActivityConsumption] 檢測到 ${actor.name} 宣告過載施法：法術升階。原始消耗環階=${originalLevel} ➜ 升階後環階=${targetLevel}`);
 
     // 儲存原始環階於 Actor 的 Flag 中，便於 RollComplete 壓力結算 (同時存於 Synthetic 和 Base Actor 避免 mismatch)
     actor.setFlag("velkora-all-in-one", "overloadOriginalLevel", originalLevel);
@@ -1328,9 +1409,11 @@ Hooks.on("dnd5e.preActivityConsumption", (activity, usageConfig, messageConfig) 
         baseActor.setFlag("velkora-all-in-one", "overloadOriginalLevel", originalLevel);
     }
 
-    // 強制設定為升階後的環階與 scaling
+    // 強制設定為升階後的環階與 scaling，並修改 slot 為目標環階，同時禁用系統自動扣減
     if (usageConfig.spell) {
+        usageConfig.spell.slot = `spell${targetLevel}`;
         usageConfig.spell.level = targetLevel;
+        usageConfig.spell.consume = false;
     }
     usageConfig.scaling = Math.max(0, targetLevel - item.system.level);
 
@@ -1346,7 +1429,20 @@ Hooks.on("dnd5e.preActivityConsumption", (activity, usageConfig, messageConfig) 
         item.updateSource({ "flags.dnd5e.scaling": usageConfig.scaling });
         delete item.actor._embeddedPreparation;
         item.prepareFinalAttributes();
-        log(`[preActivityConsumption] 已成功同步更新 cloned item scaling 至 ${usageConfig.scaling}`, "info");
+        console.log(`[Velkora] [preActivityConsumption] 已成功同步更新 cloned item scaling 至 ${usageConfig.scaling}`);
+    }
+
+    // 手動扣減原始所選的法術位
+    if (originalSlot) {
+        if (isPact) {
+            const currentPact = actor.system.spells?.pact?.value || 0;
+            await actor.update({ "system.spells.pact.value": Math.max(0, currentPact - 1) });
+            log(`[Overload] 手動扣減原契约法術位 1 個，剩餘 ${Math.max(0, currentPact - 1)}`, "info", true);
+        } else {
+            const currentSlots = actor.system.spells?.[originalSlot]?.value || 0;
+            await actor.update({ [`system.spells.${originalSlot}.value`]: Math.max(0, currentSlots - 1) });
+            log(`[Overload] 手動扣減原始法術位 ${originalSlot} 1 個，剩餘 ${Math.max(0, currentSlots - 1)}`, "info", true);
+        }
     }
 });
 
@@ -1404,6 +1500,7 @@ Hooks.on("midi-qol.preTargeting", (arg) => {
 // ⭐ 核心過載管理：Midi-QOL 施法升階等級修正
 // ==========================================
 const preItemRollHandler = async (arg1, arg2, arg3) => {
+    console.log("[Velkora] preItemRoll hook fired.");
     let workflow = null;
     let config = null;
     let item = null;
@@ -1428,8 +1525,9 @@ const preItemRollHandler = async (arg1, arg2, arg3) => {
 
     if (!actor || !item || item.type !== "spell") return;
 
-    // 檢查是否有過載升階 buff (使用 getFlag)
-    const overloadEffect = actor.effects.find(e => e.getFlag?.("velkora-all-in-one", "isOverloadBuff") && e.getFlag?.("velkora-all-in-one", "overloadType") === "Elevation");
+    // 檢查是否有過載升階 buff (使用 getFlag 與 raw flags 雙重尋找)
+    const overloadEffect = findOverloadBuff(actor, "Elevation");
+    console.log("[Velkora] preItemRoll overloadEffect found:", overloadEffect);
     if (!overloadEffect) return;
 
     // 排除戲法
@@ -1447,6 +1545,7 @@ const preItemRollHandler = async (arg1, arg2, arg3) => {
     } else if (config && config.spell?.level !== undefined) {
         originalLevel = config.spell.level;
     }
+    console.log("[Velkora] preItemRoll originalLevel calculated:", originalLevel);
 
     let targetLevel = originalLevel;
     if (originalLevel === 8) {
@@ -1457,7 +1556,7 @@ const preItemRollHandler = async (arg1, arg2, arg3) => {
 
     if (targetLevel === originalLevel) return;
 
-    log(`[Midi PreItemRoll] Overload Elevation: originalLevel=${originalLevel} -> targetLevel=${targetLevel}`, "info");
+    console.log(`[Velkora] [Midi PreItemRoll] Overload Elevation: originalLevel=${originalLevel} -> targetLevel=${targetLevel}`);
 
     // 儲存原始環階於 Actor 的 Flag 中，確保 RollComplete 壓力結算正確
     actor.setFlag("velkora-all-in-one", "overloadOriginalLevel", originalLevel);
@@ -1476,11 +1575,13 @@ const preItemRollHandler = async (arg1, arg2, arg3) => {
             const scaling = Math.max(0, targetLevel - item.system.level);
             workflow.item.updateSource({ "flags.dnd5e.scaling": scaling });
             workflow.item.prepareFinalAttributes();
+            console.log(`[Velkora] [Midi PreItemRoll] Updated workflow.item scaling to ${scaling}`);
         }
         if (workflow.activity?.item) {
             const scaling = Math.max(0, targetLevel - item.system.level);
             workflow.activity.item.updateSource({ "flags.dnd5e.scaling": scaling });
             workflow.activity.item.prepareFinalAttributes();
+            console.log(`[Velkora] [Midi PreItemRoll] Updated workflow.activity.item scaling to ${scaling}`);
         }
     }
 
@@ -1652,11 +1753,11 @@ Hooks.on("midi-qol.RollComplete", async (workflow) => {
             }
         } else {
             // 奧術/神術施法者處理壓力結算
-            const overloadEffect = actor.effects.find(e => e.getFlag?.("velkora-all-in-one", "isOverloadBuff"));
+            const overloadEffect = findOverloadBuff(actor);
             const isOverloaded = !!overloadEffect;
             let overloadType = "";
             
-            if (isOverloaded) overloadType = overloadEffect.getFlag("velkora-all-in-one", "overloadType");
+            if (isOverloaded) overloadType = overloadEffect.getFlag?.("velkora-all-in-one", "overloadType") || overloadEffect.flags?.["velkora-all-in-one"]?.overloadType;
 
             // 嘗試從當前 Actor、Token Actor 或 Base Actor 讀取旗標
             const overloadOriginalLevel = actor.getFlag("velkora-all-in-one", "overloadOriginalLevel") || 
@@ -1674,7 +1775,13 @@ Hooks.on("midi-qol.RollComplete", async (workflow) => {
                 let actionText = "";
                 if (isOverloaded) {
                     const choiceLabel = game.i18n.localize(`VELKORA.Dialog.Overload.${overloadType}`).split(" (")[0];
-                    const levelInfo = game.i18n.format("VELKORA.HUD.OverloadLevelInfo", { to: baseSpellLevel, from: originalLevel }) || `威力升至 ${baseSpellLevel} 環，原 ${originalLevel} 環`;
+                    let levelInfo = "";
+                    if (overloadType === "Elevation") {
+                        levelInfo = game.i18n.format("VELKORA.HUD.OverloadLevelInfo", { to: baseSpellLevel, from: originalLevel }) || `威力提升至 ${baseSpellLevel} 環，原 ${originalLevel} 環`;
+                    } else {
+                        const suffix = game.i18n.localize("VELKORA.HUD.SpellLevelSuffix") || "環";
+                        levelInfo = `${baseSpellLevel}${suffix}`;
+                    }
                     actionText = `${game.i18n.localize("VELKORA.HUD.OverloadCasting")}[${choiceLabel}]：${item.name} (${levelInfo})`;
                 } else {
                     const castLabel = game.i18n.localize("VELKORA.HUD.CastSpell") || "施放";
