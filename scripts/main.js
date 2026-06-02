@@ -5,7 +5,7 @@
 // 系統命名空間：velkora-all-in-one
 // ==========================================
 
-const SCRIPT_VERSION = "V7.8";
+const SCRIPT_VERSION = "V7.9";
 
 // ==========================================
 // 🌿 原初施法者判定輔助函數 (Primal Caster Check)
@@ -778,33 +778,69 @@ Hooks.on("midi-qol.preDamageRoll", async (workflow) => {
 
     // 檢查是否有過載升階 buff 或是已記錄的 overloadOriginalLevel 旗標
     const overloadOriginalLevel = actor.getFlag("velkora-all-in-one", "overloadOriginalLevel") || 
-                                  (actor.token ? actor.token.actor.getFlag("velkora-all-in-one", "overloadOriginalLevel") : undefined);
-    
-    if (overloadOriginalLevel !== undefined) {
-        // 這是過載升階施法！在傷害計算前，再次強制同步 workflow 的 spellLevel
-        let targetLevel = overloadOriginalLevel;
-        if (overloadOriginalLevel === 8) {
+                                  (actor.token ? actor.token.actor.getFlag("velkora-all-in-one", "overloadOriginalLevel") : undefined) ||
+                                  (actor.uuid ? fromUuidSync(actor.uuid)?.getFlag("velkora-all-in-one", "overloadOriginalLevel") : undefined);
+    const overloadEffect = findOverloadBuff(actor, "Elevation");
+
+    if (overloadEffect || overloadOriginalLevel !== undefined) {
+        const originalLevel = overloadOriginalLevel !== undefined ? overloadOriginalLevel : (workflow.spellLevel || item.system.level || 1);
+        let targetLevel = originalLevel;
+        if (originalLevel === 8) {
             targetLevel = 9;
-        } else if (overloadOriginalLevel <= 7 && overloadOriginalLevel > 0) {
-            targetLevel = overloadOriginalLevel + 2;
+        } else if (originalLevel <= 7 && originalLevel > 0) {
+            targetLevel = originalLevel + 2;
         }
         
-        if (targetLevel !== overloadOriginalLevel) {
+        if (targetLevel !== originalLevel) {
             log(`[Midi preDamageRoll] 檢測到過載升階。強制將 workflow.spellLevel 從 ${workflow.spellLevel} 變更為 ${targetLevel}`, "info", true);
+            
+            // 確保設定 flag
+            await actor.setFlag("velkora-all-in-one", "overloadOriginalLevel", originalLevel);
+            const baseActor = game.actors.get(actor.id);
+            if (baseActor && baseActor !== actor) {
+                await baseActor.setFlag("velkora-all-in-one", "overloadOriginalLevel", originalLevel);
+            }
+
             workflow.spellLevel = targetLevel;
             if (workflow.castData) {
                 workflow.castData.castLevel = targetLevel;
             }
             
             const scaling = Math.max(0, targetLevel - item.system.level);
+            
+            // 寫入複製的 item
             if (workflow.item) {
                 workflow.item.updateSource({ "flags.dnd5e.scaling": scaling });
-                workflow.item.prepareFinalAttributes();
+                if (!workflow.item.flags.dnd5e) workflow.item.flags.dnd5e = {};
+                workflow.item.flags.dnd5e.scaling = scaling;
+                
+                if (workflow.item.actor) workflow.item.actor._embeddedPreparation = true;
+                workflow.item.prepareData();
+                if (workflow.item.actor) delete workflow.item.actor._embeddedPreparation;
             }
+            // 寫入複製的 activity item
             if (workflow.activity?.item) {
                 workflow.activity.item.updateSource({ "flags.dnd5e.scaling": scaling });
-                workflow.activity.item.prepareFinalAttributes();
+                if (!workflow.activity.item.flags.dnd5e) workflow.activity.item.flags.dnd5e = {};
+                workflow.activity.item.flags.dnd5e.scaling = scaling;
+                
+                if (workflow.activity.item.actor) workflow.activity.item.actor._embeddedPreparation = true;
+                workflow.activity.item.prepareData();
+                if (workflow.activity.item.actor) delete workflow.activity.item.actor._embeddedPreparation;
             }
+            
+            // 關鍵：將 flags 寫入原始 actor item 以確保 core getRollData / scaling.increase 正確讀取
+            const originalItem = actor.items.get(item.id);
+            if (originalItem) {
+                await originalItem.setFlag("dnd5e", "scaling", scaling);
+                log(`[Midi preDamageRoll] 已同步更新原始物品 ${originalItem.name} flags.dnd5e.scaling = ${scaling}`, "info");
+            }
+        }
+    } else {
+        // 如果沒有過載升階，主動清除原始物品 flags.dnd5e.scaling
+        const originalItem = actor.items.get(item.id);
+        if (originalItem && originalItem.getFlag("dnd5e", "scaling") !== undefined) {
+            await originalItem.unsetFlag("dnd5e", "scaling");
         }
     }
 
@@ -1415,14 +1451,23 @@ Hooks.on("dnd5e.preActivityConsumption", (activity, usageConfig, messageConfig) 
         foundry.utils.setProperty(messageConfig, "data.system.scaling", usageConfig.scaling);
     }
 
-    // 關鍵修復：由於 preActivityConsumption 執行在 _prepareUsageScaling 之後，
-    // 我們必須手動將升階後的 scaling 寫入複製的 item flags 裡，否則傷害/效果無法正確以升階後的數據投骰。
     if (item && usageConfig.scaling !== item.flags.dnd5e?.scaling) {
-        item.actor._embeddedPreparation = true;
         item.updateSource({ "flags.dnd5e.scaling": usageConfig.scaling });
+        if (!item.flags.dnd5e) item.flags.dnd5e = {};
+        item.flags.dnd5e.scaling = usageConfig.scaling;
+        
+        item.actor._embeddedPreparation = true;
+        item.prepareData();
         delete item.actor._embeddedPreparation;
-        item.prepareFinalAttributes();
         console.log(`[Velkora] [preActivityConsumption] 已成功同步更新 cloned item scaling 至 ${usageConfig.scaling}`);
+    }
+
+    // 同時異步更新原始角色物品 flags 以確保 getRollData 正確讀取
+    const originalItem = actor.items.get(item.id);
+    if (originalItem) {
+        originalItem.setFlag("dnd5e", "scaling", usageConfig.scaling).then(() => {
+            log(`[preActivityConsumption] 異步寫入原始物品 scaling 旗標為 ${usageConfig.scaling}`, "info");
+        });
     }
 });
 
@@ -1507,8 +1552,14 @@ const preItemRollHandler = async (arg1, arg2, arg3) => {
 
     // 檢查是否有過載升階 buff (使用 getFlag 與 raw flags 雙重尋找)
     const overloadEffect = findOverloadBuff(actor, "Elevation");
-    console.log("[Velkora] preItemRoll overloadEffect found:", overloadEffect);
-    if (!overloadEffect) return;
+    if (!overloadEffect) {
+        // 主動清理可能殘留的 scaling 旗標
+        const originalItem = actor.items.get(item.id);
+        if (originalItem && originalItem.getFlag("dnd5e", "scaling") !== undefined) {
+            await originalItem.unsetFlag("dnd5e", "scaling");
+        }
+        return;
+    }
 
     // 排除戲法
     if (item.system?.level === 0) return;
@@ -1550,18 +1601,35 @@ const preItemRollHandler = async (arg1, arg2, arg3) => {
         if (workflow.castData) {
             workflow.castData.castLevel = targetLevel;
         }
+        const scaling = Math.max(0, targetLevel - item.system.level);
+        
         // 同時更新 Midi-QOL 複製的 item 上的 scaling 旗標，確保傷害公式計算能正常升階
         if (workflow.item) {
-            const scaling = Math.max(0, targetLevel - item.system.level);
             workflow.item.updateSource({ "flags.dnd5e.scaling": scaling });
-            workflow.item.prepareFinalAttributes();
+            if (!workflow.item.flags.dnd5e) workflow.item.flags.dnd5e = {};
+            workflow.item.flags.dnd5e.scaling = scaling;
+            
+            if (workflow.item.actor) workflow.item.actor._embeddedPreparation = true;
+            workflow.item.prepareData();
+            if (workflow.item.actor) delete workflow.item.actor._embeddedPreparation;
             console.log(`[Velkora] [Midi PreItemRoll] Updated workflow.item scaling to ${scaling}`);
         }
         if (workflow.activity?.item) {
-            const scaling = Math.max(0, targetLevel - item.system.level);
             workflow.activity.item.updateSource({ "flags.dnd5e.scaling": scaling });
-            workflow.activity.item.prepareFinalAttributes();
+            if (!workflow.activity.item.flags.dnd5e) workflow.activity.item.flags.dnd5e = {};
+            workflow.activity.item.flags.dnd5e.scaling = scaling;
+            
+            if (workflow.activity.item.actor) workflow.activity.item.actor._embeddedPreparation = true;
+            workflow.activity.item.prepareData();
+            if (workflow.activity.item.actor) delete workflow.activity.item.actor._embeddedPreparation;
             console.log(`[Velkora] [Midi PreItemRoll] Updated workflow.activity.item scaling to ${scaling}`);
+        }
+
+        // 異步寫入原始角色物品 flags 以防 core 預先載入
+        const originalItem = actor.items.get(item.id);
+        if (originalItem) {
+            await originalItem.setFlag("dnd5e", "scaling", scaling);
+            console.log(`[Velkora] [Midi PreItemRoll] Updated original item scaling flag to ${scaling}`);
         }
     }
 
@@ -1797,6 +1865,17 @@ Hooks.on("midi-qol.RollComplete", async (workflow) => {
                     await baseActor.unsetFlag("velkora-all-in-one", "overloadOriginalLevel");
                 }
                 log(`已自動清除暫存的過載原始環階旗標。`, "info");
+            }
+
+            // 清理原始物品的 scaling 旗標
+            const originalItem = actor.items.get(item.id);
+            if (originalItem) {
+                try {
+                    await originalItem.unsetFlag("dnd5e", "scaling");
+                    log(`已自動清除原始物品 ${originalItem.name} 的 scaling 旗標。`, "info");
+                } catch (e) {
+                    // Silently ignore if already deleted
+                }
             }
 
             if (isOverloaded) {

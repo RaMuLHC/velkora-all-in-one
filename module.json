@@ -2,10 +2,10 @@
   "id": "velkora-all-in-one",
   "title": "Velkora : All in one automation pack",
   "description": "Automation module built for Velkora: Guide to the Shattered Reality.",
-  "version": "1.1.5",
+  "version": "1.1.6",
   "url": "https://github.com/RaMuLHC/velkora-all-in-one",
   "manifest": "https://raw.githubusercontent.com/RaMuLHC/velkora-all-in-one/main/module.json",
-  "download": "https://github.com/RaMuLHC/velkora-all-in-one/releases/download/v1.1-build-850/velkora-all-in-one.zip",
+  "download": "https://github.com/RaMuLHC/velkora-all-in-one/releases/download/v1.1-build-860/velkora-all-in-one.zip",
   "compatibility": {
     "minimum": "13",
     "verified": "13"
