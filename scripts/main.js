@@ -1076,14 +1076,192 @@ class PrimalRhythmHUD extends Application {
 }
 
 // ==========================================
+// 🛠️ 危殼專屬特性點擊自訂執行器 (輔助函數，避免 Midi-QOL 工作流污染目標)
+// ==========================================
+function handleRotationUse(actor) {
+    if (!game.combat) {
+        ui.notifications.warn(game.i18n.localize("VELKORA.Notifications.OnlyInCombat"));
+        log(`玩家嘗試在非戰鬥狀態使用「主動輪轉」特質，已被拒絕。`, "info");
+        return;
+    }
+
+    let current = actor.getFlag("velkora-all-in-one", "currentSeason") || 1;
+    let next = current + 1;
+    if (next > 4) next = 1;
+
+    log(`玩家使用「主動輪轉」特質，自動單向輪換季節：${current} ➜ ${next}`, "info");
+    setActorSeason(actor, next, "主動輪換");
+}
+
+function handleOverloadUse(actor) {
+    const actorName = actor.name || "未知角色";
+    const titleText = game.i18n.format("VELKORA.Dialog.Overload.Title", { name: actorName });
+    const contentText = game.i18n.localize("VELKORA.Dialog.Overload.Content");
+    const elevationText = game.i18n.localize("VELKORA.Dialog.Overload.Elevation");
+    const penetrationText = game.i18n.localize("VELKORA.Dialog.Overload.Penetration");
+    const destructionText = game.i18n.localize("VELKORA.Dialog.Overload.Destruction");
+    const confirmText = game.i18n.localize("VELKORA.Dialog.Overload.Confirm");
+
+    new Dialog({
+        title: titleText,
+        content: `
+            <div style="margin-bottom: 10px;">
+                <p>${contentText}</p>
+                <select id="overload-choice" style="width: 100%; height: 30px;">
+                    <option value="Elevation">${elevationText}</option>
+                    <option value="Penetration">${penetrationText}</option>
+                    <option value="Destruction">${destructionText}</option>
+                </select>
+            </div>
+        `,
+        buttons: {
+            confirm: {
+                icon: '<i class="fas fa-fire"></i>',
+                label: confirmText,
+                callback: async (html) => {
+                    const htmlEl = html instanceof HTMLElement ? html : html[0];
+                    const choiceNode = htmlEl.querySelector("#overload-choice");
+                    const choice = choiceNode ? choiceNode.value : "Elevation";
+                    
+                    const choiceLabel = game.i18n.localize(`VELKORA.Dialog.Overload.${choice}`).split(" (")[0];
+
+                    const effectData = {
+                        name: game.i18n.format("VELKORA.Chat.OverloadBuffName", { choice: choiceLabel }),
+                        img: "modules/velkora-all-in-one/assets/icons/overload.svg",
+                        description: game.i18n.format("VELKORA.Chat.OverloadBuffDesc", { choice: choiceLabel }),
+                        flags: { "velkora-all-in-one": { isOverloadBuff: true, overloadType: choice } },
+                        changes: []
+                    };
+
+                    if (choice === "Destruction") {
+                        effectData.changes.push({ key: "flags.midi-qol.max.damage.all", mode: 5, value: "1" });
+                    } else if (choice === "Penetration") {
+                        effectData.changes.push({ key: "flags.midi-qol.advantage.attack.all", mode: 5, value: "1" });
+                        effectData.changes.push({ key: "flags.midi-qol.grants.disadvantage.save.all", mode: 5, value: "1" });
+                    }
+
+                    await actor.createEmbeddedDocuments("ActiveEffect", [effectData]);
+
+                    ChatMessage.create({
+                        speaker: ChatMessage.getSpeaker({actor: actor}),
+                        content: `<div style="background: rgba(255,0,0,0.1); padding: 5px; border-left: 4px solid darkred;">
+                                    <h3 style="color: darkred; margin:0;">${game.i18n.localize("VELKORA.Chat.OverloadTitle")}</h3>
+                                    <p style="margin: 5px 0 0 0;">${game.i18n.format("VELKORA.Chat.OverloadBody", { choice: choiceLabel })}</p>
+                                  </div>`
+                    });
+                }
+            }
+        },
+        default: "confirm"
+    }).render(true);
+}
+
+function handleSutureUse(actor) {
+    const actorName = actor.name || "未知角色";
+    const spells = actor.system.spells || {};
+    let slotOptions = "";
+    
+    for (let i = 1; i <= 9; i++) {
+        if (spells[`spell${i}`] && spells[`spell${i}`].max > 0 && spells[`spell${i}`].value > 0) {
+            slotOptions += `<option value="${i}">${game.i18n.format("VELKORA.Dialog.Suture.SpellSlot", { level: i, value: spells[`spell${i}`].value })}</option>`;
+        }
+    }
+    if (spells.pact && spells.pact.max > 0 && spells.pact.value > 0) {
+        slotOptions += `<option value="${spells.pact.level}">${game.i18n.format("VELKORA.Dialog.Suture.PactSlot", { level: spells.pact.level, value: spells.pact.value })}</option>`;
+    }
+
+    if (slotOptions === "") {
+        ui.notifications.warn(game.i18n.localize("VELKORA.Notifications.NoSutureSlots"));
+        return;
+    }
+
+    const dialogTitle = game.i18n.format("VELKORA.Dialog.Suture.Title", { name: actorName });
+    const dialogContent = game.i18n.localize("VELKORA.Dialog.Suture.Content");
+    const selectSlotLabel = game.i18n.localize("VELKORA.Dialog.Suture.SelectSlot");
+    const executeLabel = game.i18n.localize("VELKORA.Dialog.Suture.Execute");
+    const cancelLabel = game.i18n.localize("VELKORA.HUD.Cancel");
+
+    new Dialog({
+        title: dialogTitle,
+        content: `
+            <div style="margin-bottom: 10px;">
+                <p>${dialogContent}</p>
+                <label>${selectSlotLabel}</label>
+                <select id="suture-slot-level" style="width: 100%; height: 30px;">
+                    ${slotOptions}
+                </select>
+            </div>
+        `,
+        buttons: {
+            confirm: {
+                icon: '<i class="fas fa-check"></i>',
+                label: executeLabel,
+                callback: async (html) => {
+                    const htmlEl = html instanceof HTMLElement ? html : html[0];
+                    const selectNode = htmlEl.querySelector("#suture-slot-level");
+                    const chosenLevel = parseInt(selectNode.value, 10);
+                    const isPact = selectNode.options[selectNode.selectedIndex].text.includes(game.i18n.localize("VELKORA.Dialog.Suture.PactSlot").split(" {")[0]);
+                    
+                    if (isPact) {
+                        await actor.update({ "system.spells.pact.value": spells.pact.value - 1 });
+                    } else {
+                        await actor.update({ [`system.spells.spell${chosenLevel}.value`]: spells[`spell${chosenLevel}`].value - 1 });
+                    }
+
+                    if (game.user.isGM) {
+                        await applySutureExecution(actor, actor.name, chosenLevel);
+                    } else {
+                        const activeGM = game.users.find(u => u.isGM && u.active);
+                        if (activeGM) {
+                            log(`[Socket] 發送屏障縫合信號至 GM: level=${chosenLevel}`, "info");
+                            game.socket.emit("module.velkora-all-in-one", {
+                                action: "suture",
+                                level: chosenLevel,
+                                actorId: actor.id
+                            });
+                        } else {
+                            ui.notifications.warn(game.i18n.localize("VELKORA.Notifications.NoActiveGmSuture"));
+                        }
+                    }
+                }
+            },
+            cancel: { icon: '<i class="fas fa-times"></i>', label: cancelLabel }
+        },
+        default: "confirm"
+    }).render(true);
+}
+
+// ==========================================
 // ⭐ 核心過載管理：施法升階 (preUseActivity 攔截)
 // ==========================================
 Hooks.on("dnd5e.preUseActivity", (activity, usageConfig, dialogConfig, messageConfig) => {
     const actor = activity.actor;
     if (!actor) return;
+    const item = activity.item;
+    if (!item) return;
 
-    // 檢查是否有過載升階 buff
-    const overloadEffect = actor.effects.find(e => e.flags?.["velkora-all-in-one"]?.isOverloadBuff && e.flags?.["velkora-all-in-one"]?.overloadType === "Elevation");
+    const isOverloadItem = item.flags?.["velkora-all-in-one"]?.isOverload || item.name === "過載施法" || item.name === "过载施法" || item.name === "Overload Casting";
+    const isSuture = item.flags?.["velkora-all-in-one"]?.isSuture || item.name === "屏障縫合" || item.name === "屏障缝合" || item.name === "Veil Suture" || item.name === "Barrier Suture";
+    const isRotation = item.flags?.["velkora-all-in-one"]?.isRotation || 
+                       item.name === "主動輪轉" || item.name.startsWith("主動輪轉") ||
+                       item.name === "主动轮转" || item.name.startsWith("主动轮转") ||
+                       item.name === "Active Rotation" || item.name.startsWith("Active Rotation");
+
+    if (isOverloadItem) {
+        handleOverloadUse(actor);
+        return false;
+    }
+    if (isSuture) {
+        handleSutureUse(actor);
+        return false;
+    }
+    if (isRotation) {
+        handleRotationUse(actor);
+        return false;
+    }
+
+    // 檢查是否有過載升階 buff (使用 getFlag 確保相容性)
+    const overloadEffect = actor.effects.find(e => e.getFlag?.("velkora-all-in-one", "isOverloadBuff") && e.getFlag?.("velkora-all-in-one", "overloadType") === "Elevation");
     if (!overloadEffect) return;
 
     // 過載升階僅限於大於 0 環的法術 (排除戲法)
@@ -1120,8 +1298,12 @@ Hooks.on("dnd5e.preUseActivity", (activity, usageConfig, dialogConfig, messageCo
 
         log(`[過載升階] 原始消耗環階=${originalLevel}，升階後威力=${targetLevel}，法術基礎環階=${itemClone.system.level}`, "info");
 
-        // 儲存原始環階於 Actor 的 Flag 中，便於 RollComplete 壓力結算 (選項 A)
+        // 儲存原始環階於 Actor 的 Flag 中，便於 RollComplete 壓力結算 (同時存於 Synthetic 和 Base Actor 避免 mismatch)
         await this.actor.setFlag("velkora-all-in-one", "overloadOriginalLevel", originalLevel);
+        const baseActor = game.actors.get(this.actor.id);
+        if (baseActor && baseActor !== this.actor) {
+            await baseActor.setFlag("velkora-all-in-one", "overloadOriginalLevel", originalLevel);
+        }
 
         // 先執行原生的 _prepareUsageScaling 邏輯
         if (typeof originalPrepare === "function") {
@@ -1133,6 +1315,37 @@ Hooks.on("dnd5e.preUseActivity", (activity, usageConfig, dialogConfig, messageCo
         foundry.utils.setProperty(mConfig, "data.system.spellLevel", targetLevel);
         foundry.utils.setProperty(mConfig, "data.system.scaling", uConfig.scaling);
     };
+});
+
+// ==========================================
+// ⭐ 核心過載管理：Midi-QOL 施法升階等級修正
+// ==========================================
+Hooks.on("midi-qol.preItemRoll", async (workflow) => {
+    const actor = workflow.actor;
+    const item = workflow.item;
+    if (!actor || !item || item.type !== "spell") return;
+
+    // 檢查是否有過載升階 buff (使用 getFlag)
+    const overloadEffect = actor.effects.find(e => e.getFlag?.("velkora-all-in-one", "isOverloadBuff") && e.getFlag?.("velkora-all-in-one", "overloadType") === "Elevation");
+    if (!overloadEffect) return;
+
+    // 排除戲法
+    if (item.system?.level === 0) return;
+
+    const originalLevel = workflow.spellLevel;
+    let targetLevel = originalLevel;
+    if (originalLevel === 8) {
+        targetLevel = 9;
+    } else if (originalLevel <= 7 && originalLevel > 0) {
+        targetLevel = originalLevel + 2;
+    }
+
+    log(`[Midi PreItemRoll] Overload Elevation: originalLevel=${originalLevel} -> targetLevel=${targetLevel}`, "info");
+
+    workflow.spellLevel = targetLevel;
+    if (workflow.castData) {
+        workflow.castData.castLevel = targetLevel;
+    }
 });
 
 // ==========================================
@@ -1148,7 +1361,7 @@ Hooks.on("midi-qol.RollComplete", async (workflow) => {
 
     if (item.type === "spell") {
         const isPrimal = isPrimalCaster(actor);
-        let baseSpellLevel = workflow.castData?.castLevel || workflow.spellLevel || item.system.level || 0;
+        let baseSpellLevel = workflow.spellLevel || workflow.castData?.castLevel || workflow.itemLevel || item.system?.level || 0;
 
         if (isPrimal && baseSpellLevel > 0) {
             if (!game.combat) {
@@ -1288,13 +1501,17 @@ Hooks.on("midi-qol.RollComplete", async (workflow) => {
             }
         } else {
             // 奧術/神術施法者處理壓力結算
-            const overloadEffect = actor.effects.find(e => e.flags?.["velkora-all-in-one"]?.isOverloadBuff);
+            const overloadEffect = actor.effects.find(e => e.getFlag?.("velkora-all-in-one", "isOverloadBuff"));
             const isOverloaded = !!overloadEffect;
             let overloadType = "";
             
-            if (isOverloaded) overloadType = overloadEffect.flags["velkora-all-in-one"].overloadType;
+            if (isOverloaded) overloadType = overloadEffect.getFlag("velkora-all-in-one", "overloadType");
 
-            const overloadOriginalLevel = actor.getFlag("velkora-all-in-one", "overloadOriginalLevel");
+            // 嘗試從當前 Actor、Token Actor 或 Base Actor 讀取旗標
+            const overloadOriginalLevel = actor.getFlag("velkora-all-in-one", "overloadOriginalLevel") || 
+                                          (actor.token ? actor.token.actor.getFlag("velkora-all-in-one", "overloadOriginalLevel") : undefined) ||
+                                          (actor.uuid ? fromUuidSync(actor.uuid)?.getFlag("velkora-all-in-one", "overloadOriginalLevel") : undefined);
+
             const originalLevel = (overloadType === "Elevation" && overloadOriginalLevel !== undefined) ? overloadOriginalLevel : baseSpellLevel;
 
             if (originalLevel > 0) {
@@ -1331,8 +1548,13 @@ Hooks.on("midi-qol.RollComplete", async (workflow) => {
                 }
             }
 
+            // 清理 Flag
             if (overloadOriginalLevel !== undefined) {
                 await actor.unsetFlag("velkora-all-in-one", "overloadOriginalLevel");
+                const baseActor = game.actors.get(actor.id);
+                if (baseActor && baseActor !== actor) {
+                    await baseActor.unsetFlag("velkora-all-in-one", "overloadOriginalLevel");
+                }
                 log(`已自動清除暫存的過載原始環階旗標。`, "info");
             }
 
@@ -1424,187 +1646,9 @@ async function applySutureExecution(actor, actorName, spellLevel) {
 // ==========================================
 // ⭐ 玩家端與系統通訊：處理宣告與縫合對話框
 // ==========================================
-Hooks.on("createChatMessage", async (message) => {
-    let item = null;
-    if (typeof message.getAssociatedItem === "function") item = message.getAssociatedItem();
-    if (!item && message.flags?.["midi-qol"]?.itemUuid) item = fromUuidSync(message.flags["midi-qol"].itemUuid);
-    if (!item) return;
-
-    if (message.flags?.["midi-qol"]?.type && message.flags["midi-qol"].type !== "ItemCard") return;
-    
-    const isOverloadItem = item.flags?.["velkora-all-in-one"]?.isOverload || item.name === "過載施法" || item.name === "过载施法" || item.name === "Overload Casting";
-    const isSuture = item.flags?.["velkora-all-in-one"]?.isSuture || item.name === "屏障縫合" || item.name === "屏障缝合" || item.name === "Veil Suture" || item.name === "Barrier Suture";
-    const isRotation = item.flags?.["velkora-all-in-one"]?.isRotation || 
-                       item.name === "主動輪轉" || item.name.startsWith("主動輪轉") ||
-                       item.name === "主动轮转" || item.name.startsWith("主动轮转") ||
-                       item.name === "Active Rotation" || item.name.startsWith("Active Rotation");
-    const actor = item.actor;
-    if (!actor) return;
-    const actorName = message.speaker.alias || actor.name || "未知角色";
-
-    if (isRotation && message.author.id === game.user.id) {
-        if (!game.combat) {
-            ui.notifications.warn(game.i18n.localize("VELKORA.Notifications.OnlyInCombat"));
-            log(`玩家嘗試在非戰鬥狀態使用「主動輪轉」特質，已被拒絕。`, "info");
-            if (message.delete) {
-                try { await message.delete(); } catch(e) {}
-            }
-            return;
-        }
-
-        let current = actor.getFlag("velkora-all-in-one", "currentSeason") || 1;
-        let next = current + 1;
-        if (next > 4) next = 1;
-
-        log(`玩家使用「主動輪轉」特質，自動單向輪換季節：${current} ➜ ${next}`, "info");
-        await setActorSeason(actor, next, "主動輪換");
-
-        if (message.delete) {
-            try { await message.delete(); } catch(e) {}
-        }
-        return;
-    }
-
-    if (isOverloadItem && message.author.id === game.user.id) {
-        const titleText = game.i18n.format("VELKORA.Dialog.Overload.Title", { name: actorName });
-        const contentText = game.i18n.localize("VELKORA.Dialog.Overload.Content");
-        const elevationText = game.i18n.localize("VELKORA.Dialog.Overload.Elevation");
-        const penetrationText = game.i18n.localize("VELKORA.Dialog.Overload.Penetration");
-        const destructionText = game.i18n.localize("VELKORA.Dialog.Overload.Destruction");
-        const confirmText = game.i18n.localize("VELKORA.Dialog.Overload.Confirm");
-
-        new Dialog({
-            title: titleText,
-            content: `
-                <div style="margin-bottom: 10px;">
-                    <p>${contentText}</p>
-                    <select id="overload-choice" style="width: 100%; height: 30px;">
-                        <option value="Elevation">${elevationText}</option>
-                        <option value="Penetration">${penetrationText}</option>
-                        <option value="Destruction">${destructionText}</option>
-                    </select>
-                </div>
-            `,
-            buttons: {
-                confirm: {
-                    icon: '<i class="fas fa-fire"></i>',
-                    label: confirmText,
-                    callback: async (html) => {
-                        const htmlEl = html instanceof HTMLElement ? html : html[0];
-                        const choiceNode = htmlEl.querySelector("#overload-choice");
-                        const choice = choiceNode ? choiceNode.value : "Elevation";
-                        
-                        const choiceLabel = game.i18n.localize(`VELKORA.Dialog.Overload.${choice}`).split(" (")[0];
-
-                        const effectData = {
-                            name: game.i18n.format("VELKORA.Chat.OverloadBuffName", { choice: choiceLabel }),
-                            img: "icons/magic/fire/explosion-star-glow-orange.webp",
-                            description: game.i18n.format("VELKORA.Chat.OverloadBuffDesc", { choice: choiceLabel }),
-                            flags: { "velkora-all-in-one": { isOverloadBuff: true, overloadType: choice } },
-                            changes: []
-                        };
-
-                        let extraWarning = "";
-
-                        if (choice === "Destruction") {
-                            effectData.changes.push({ key: "flags.midi-qol.max.damage.all", mode: 5, value: "1" });
-                        } else if (choice === "Penetration") {
-                            effectData.changes.push({ key: "flags.midi-qol.advantage.attack.all", mode: 5, value: "1" });
-                            effectData.changes.push({ key: "flags.midi-qol.grants.disadvantage.save.all", mode: 5, value: "1" });
-                        }
-
-                        await actor.createEmbeddedDocuments("ActiveEffect", [effectData]);
-
-                        ChatMessage.create({
-                            speaker: ChatMessage.getSpeaker({actor: actor}),
-                            content: `<div style="background: rgba(255,0,0,0.1); padding: 5px; border-left: 4px solid darkred;">
-                                        <h3 style="color: darkred; margin:0;">${game.i18n.localize("VELKORA.Chat.OverloadTitle")}</h3>
-                                        <p style="margin: 5px 0 0 0;">${game.i18n.format("VELKORA.Chat.OverloadBody", { choice: choiceLabel })}</p>
-                                      </div>`
-                        });
-                    }
-                }
-            },
-            default: "confirm"
-        }).render(true);
-        return;
-    }
-
-    if (isSuture && message.author.id === game.user.id) {
-        const spells = actor.system.spells || {};
-        let slotOptions = "";
-        
-        for (let i = 1; i <= 9; i++) {
-            if (spells[`spell${i}`] && spells[`spell${i}`].max > 0 && spells[`spell${i}`].value > 0) {
-                slotOptions += `<option value="${i}">${game.i18n.format("VELKORA.Dialog.Suture.SpellSlot", { level: i, value: spells[`spell${i}`].value })}</option>`;
-            }
-        }
-        if (spells.pact && spells.pact.max > 0 && spells.pact.value > 0) {
-            slotOptions += `<option value="${spells.pact.level}">${game.i18n.format("VELKORA.Dialog.Suture.PactSlot", { level: spells.pact.level, value: spells.pact.value })}</option>`;
-        }
-
-        if (slotOptions === "") {
-            ui.notifications.warn(game.i18n.localize("VELKORA.Notifications.NoSutureSlots"));
-            return;
-        }
-
-        const dialogTitle = game.i18n.format("VELKORA.Dialog.Suture.Title", { name: actorName });
-        const dialogContent = game.i18n.localize("VELKORA.Dialog.Suture.Content");
-        const selectSlotLabel = game.i18n.localize("VELKORA.Dialog.Suture.SelectSlot");
-        const executeLabel = game.i18n.localize("VELKORA.Dialog.Suture.Execute");
-        const cancelLabel = game.i18n.localize("VELKORA.HUD.Cancel");
-
-        new Dialog({
-            title: dialogTitle,
-            content: `
-                <div style="margin-bottom: 10px;">
-                    <p>${dialogContent}</p>
-                    <label>${selectSlotLabel}</label>
-                    <select id="suture-slot-level" style="width: 100%; height: 30px;">
-                        ${slotOptions}
-                    </select>
-                </div>
-            `,
-            buttons: {
-                confirm: {
-                    icon: '<i class="fas fa-check"></i>',
-                    label: executeLabel,
-                    callback: async (html) => {
-                        const htmlEl = html instanceof HTMLElement ? html : html[0];
-                        const selectNode = htmlEl.querySelector("#suture-slot-level");
-                        const chosenLevel = parseInt(selectNode.value, 10);
-                        const isPact = selectNode.options[selectNode.selectedIndex].text.includes(game.i18n.localize("VELKORA.Dialog.Suture.PactSlot").split(" {")[0]);
-                        
-                        if (isPact) {
-                            await actor.update({ "system.spells.pact.value": spells.pact.value - 1 });
-                        } else {
-                            await actor.update({ [`system.spells.spell${chosenLevel}.value`]: spells[`spell${chosenLevel}`].value - 1 });
-                        }
-
-                        if (game.user.isGM) {
-                            await applySutureExecution(actor, actor.name, chosenLevel);
-                        } else {
-                            const activeGM = game.users.find(u => u.isGM && u.active);
-                            if (activeGM) {
-                                log(`[Socket] 發送屏障縫合信號至 GM: level=${chosenLevel}`, "info");
-                                game.socket.emit("module.velkora-all-in-one", {
-                                    action: "suture",
-                                    level: chosenLevel,
-                                    actorId: actor.id
-                                });
-                            } else {
-                                ui.notifications.warn(game.i18n.localize("VELKORA.Notifications.NoActiveGmSuture"));
-                            }
-                        }
-                    }
-                },
-                cancel: { icon: '<i class="fas fa-times"></i>', label: cancelLabel }
-            },
-            default: "confirm"
-        }).render(true);
-        return;
-    }
-});
+// ==========================================
+// ⭐ 玩家端與系統通訊：宣告與縫合工作流已遷移至 dnd5e.preUseActivity 處理
+// ==========================================
 
 
 // ==========================================
