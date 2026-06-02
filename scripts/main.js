@@ -2600,6 +2600,7 @@ Hooks.on("updateCombat", async (combat, updateData, options, userId) => {
                         }));
                         await targetActor.createEmbeddedDocuments("ActiveEffect", [{
                             name: game.i18n.localize("VELKORA.Chat.WinterSlowEffectName"),
+                            img: "icons/magic/water/snowflake-ice-blue.webp",
                             icon: "icons/magic/water/snowflake-ice-blue.webp",
                             changes,
                             origin: "velkora-all-in-one.winter-pulse",
