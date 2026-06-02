@@ -1273,59 +1273,63 @@ Hooks.on("dnd5e.preUseActivity", (activity, usageConfig, dialogConfig, messageCo
 
     // 檢查是否有過載升階 buff (使用 getFlag 確保相容性)
     const overloadEffect = actor.effects.find(e => e.getFlag?.("velkora-all-in-one", "isOverloadBuff") && e.getFlag?.("velkora-all-in-one", "overloadType") === "Elevation");
+    if (overloadEffect) {
+        // 過載升階僅限於大於 0 環的法術 (排除戲法)
+        if (activity.item?.type === "spell" && activity.item?.system?.level !== 0) {
+            log(`檢測到 ${actor.name} 宣告過載施法：法術升階，動態注入 scaling 邏輯。`, "info");
+        }
+    }
+});
+
+// ==========================================
+// ⭐ 核心過載管理：施法升階 (preActivityConsumption 攔截)
+// ==========================================
+Hooks.on("dnd5e.preActivityConsumption", (activity, usageConfig, messageConfig) => {
+    const actor = activity.actor;
+    if (!actor) return;
+    const item = activity.item;
+    if (!item || item.type !== "spell") return;
+
+    // 檢查是否有過載升階 buff (使用 getFlag 確保相容性)
+    const overloadEffect = actor.effects.find(e => e.getFlag?.("velkora-all-in-one", "isOverloadBuff") && e.getFlag?.("velkora-all-in-one", "overloadType") === "Elevation");
     if (!overloadEffect) return;
 
     // 過載升階僅限於大於 0 環的法術 (排除戲法)
-    if (activity.item?.type !== "spell" || activity.item?.system?.level === 0) return;
+    if (item.system?.level === 0) return;
 
-    log(`檢測到 ${actor.name} 宣告過載施法：法術升階，動態注入 scaling 邏輯。`, "info");
+    // 獲取原始所選環階
+    let originalLevel = usageConfig.spell?.level || item.system.level || 0;
+    
+    // 計算過載升階目標環階：
+    // 9環 -> 不變； 8環 -> 9環 (+1)； 1-7環 -> +2 環
+    let targetLevel = originalLevel;
+    if (originalLevel === 8) {
+        targetLevel = 9;
+    } else if (originalLevel <= 7 && originalLevel > 0) {
+        targetLevel = originalLevel + 2;
+    }
 
-    // 備份原有的 _prepareUsageScaling 方法
-    const originalPrepare = activity._prepareUsageScaling;
+    if (targetLevel === originalLevel) return;
 
-    // 覆蓋 _prepareUsageScaling 方法
-    activity._prepareUsageScaling = async function(uConfig, mConfig, itemClone) {
-        let originalLevel = 0;
-        const slot = uConfig.spell?.slot;
-        
-        // 取得所選法術位/契術位的原始環階
-        if (slot === "pact") {
-            originalLevel = this.actor.system.spells?.pact?.level || 0;
-        } else if (slot && slot.startsWith("spell")) {
-            originalLevel = parseInt(slot.replace("spell", "")) || 0;
-        } else {
-            // 預設/備用
-            originalLevel = itemClone.system.level || 0;
-        }
+    log(`[preActivityConsumption] 檢測到 ${actor.name} 宣告過載施法：法術升階。原始消耗環階=${originalLevel} ➜ 升階後環階=${targetLevel}`, "info");
 
-        // 計算過載升階目標環階：
-        // 9環 -> 不變； 8環 -> 9環 (+1)； 1-7環 -> +2 環
-        let targetLevel = originalLevel;
-        if (originalLevel === 8) {
-            targetLevel = 9;
-        } else if (originalLevel <= 7 && originalLevel > 0) {
-            targetLevel = originalLevel + 2;
-        }
+    // 儲存原始環階於 Actor 的 Flag 中，便於 RollComplete 壓力結算 (同時存於 Synthetic 和 Base Actor 避免 mismatch)
+    actor.setFlag("velkora-all-in-one", "overloadOriginalLevel", originalLevel);
+    const baseActor = game.actors.get(actor.id);
+    if (baseActor && baseActor !== actor) {
+        baseActor.setFlag("velkora-all-in-one", "overloadOriginalLevel", originalLevel);
+    }
 
-        log(`[過載升階] 原始消耗環階=${originalLevel}，升階後威力=${targetLevel}，法術基礎環階=${itemClone.system.level}`, "info");
+    // 強制設定為升階後的環階與 scaling
+    if (usageConfig.spell) {
+        usageConfig.spell.level = targetLevel;
+    }
+    usageConfig.scaling = Math.max(0, targetLevel - item.system.level);
 
-        // 儲存原始環階於 Actor 的 Flag 中，便於 RollComplete 壓力結算 (同時存於 Synthetic 和 Base Actor 避免 mismatch)
-        await this.actor.setFlag("velkora-all-in-one", "overloadOriginalLevel", originalLevel);
-        const baseActor = game.actors.get(this.actor.id);
-        if (baseActor && baseActor !== this.actor) {
-            await baseActor.setFlag("velkora-all-in-one", "overloadOriginalLevel", originalLevel);
-        }
-
-        // 先執行原生的 _prepareUsageScaling 邏輯
-        if (typeof originalPrepare === "function") {
-            await originalPrepare.call(this, uConfig, mConfig, itemClone);
-        }
-
-        // 強制覆蓋為過載升階後的值
-        uConfig.scaling = Math.max(0, targetLevel - itemClone.system.level);
-        foundry.utils.setProperty(mConfig, "data.system.spellLevel", targetLevel);
-        foundry.utils.setProperty(mConfig, "data.system.scaling", uConfig.scaling);
-    };
+    if (messageConfig) {
+        foundry.utils.setProperty(messageConfig, "data.system.spellLevel", targetLevel);
+        foundry.utils.setProperty(messageConfig, "data.system.scaling", usageConfig.scaling);
+    }
 });
 
 // ==========================================
@@ -1381,13 +1385,29 @@ Hooks.on("midi-qol.preTargeting", (arg) => {
 // ==========================================
 // ⭐ 核心過載管理：Midi-QOL 施法升階等級修正
 // ==========================================
-Hooks.on("midi-qol.preItemRoll", async (workflow) => {
-    let actor = workflow.actor;
-    let item = workflow.item;
-    if (workflow.activity) {
-        actor = workflow.activity.actor;
-        item = workflow.activity.item;
+const preItemRollHandler = async (arg1, arg2, arg3) => {
+    let workflow = null;
+    let config = null;
+    let item = null;
+    let actor = null;
+
+    if (arg1 && (arg1.constructor?.name === "Workflow" || (arg1.item && !arg1.system))) {
+        // V2 Signature: (workflow, usage, dialog, message)
+        workflow = arg1;
+        config = arg2;
+        item = workflow.item;
+        actor = workflow.actor;
+    } else {
+        // Legacy Signature: (activity, token, config, dialog, message)
+        const activity = arg1;
+        item = activity?.item;
+        actor = activity?.actor;
+        config = arg3;
+        if (config && config.workflow) {
+            workflow = config.workflow;
+        }
     }
+
     if (!actor || !item || item.type !== "spell") return;
 
     // 檢查是否有過載升階 buff (使用 getFlag)
@@ -1397,7 +1417,7 @@ Hooks.on("midi-qol.preItemRoll", async (workflow) => {
     // 排除戲法
     if (item.system?.level === 0) return;
 
-    const originalLevel = workflow.spellLevel;
+    const originalLevel = workflow ? workflow.spellLevel : (config?.spell?.level || item.system.level);
     let targetLevel = originalLevel;
     if (originalLevel === 8) {
         targetLevel = 9;
@@ -1407,11 +1427,21 @@ Hooks.on("midi-qol.preItemRoll", async (workflow) => {
 
     log(`[Midi PreItemRoll] Overload Elevation: originalLevel=${originalLevel} -> targetLevel=${targetLevel}`, "info");
 
-    workflow.spellLevel = targetLevel;
-    if (workflow.castData) {
-        workflow.castData.castLevel = targetLevel;
+    if (workflow) {
+        workflow.spellLevel = targetLevel;
+        if (workflow.castData) {
+            workflow.castData.castLevel = targetLevel;
+        }
     }
-});
+
+    if (config && config.spell) {
+        config.spell.level = targetLevel;
+        config.scaling = Math.max(0, targetLevel - item.system.level);
+    }
+};
+
+Hooks.on("midi-qol.preItemRoll", preItemRollHandler);
+Hooks.on("midi-qol.preItemRollV2", preItemRollHandler);
 
 // ==========================================
 // ⭐ 核心結算引擎：RollComplete
