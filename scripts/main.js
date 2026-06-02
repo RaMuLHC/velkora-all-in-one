@@ -1824,11 +1824,13 @@ Hooks.on("midi-qol.RollComplete", async (workflow) => {
                 }
             }
 
-            // 壓力結算環階：升階（Elevation）時應使用升階後的環階 (actualSpellLevel)；其他情況使用 originalLevel
-            const stressLevel = actualSpellLevel;
+            // 壓力結算環階：使用原始消耗環階 (Option A: 依據原始消耗法術位環階計算壓力)
+            const stressLevel = originalLevel;
 
             if (stressLevel > 0) {
                 const finalStress = stressLevel * (isOverloaded ? 2 : 1);
+                // 屏障破裂判定環階：若是過載施法，異常檢定中的環階視作實際施展環階 (actualSpellLevel) 的兩倍
+                const effectiveSpellLevel = actualSpellLevel * (isOverloaded ? 2 : 1);
                 
                 let actionText = "";
                 if (isOverloaded) {
@@ -1848,15 +1850,15 @@ Hooks.on("midi-qol.RollComplete", async (workflow) => {
                 }
 
                 if (game.user.isGM) {
-                    await processStress(finalStress, finalStress, actor.name, actionText);
+                    await processStress(finalStress, effectiveSpellLevel, actor.name, actionText);
                 } else {
                     const activeGM = game.users.find(u => u.isGM && u.active);
                     if (activeGM) {
-                        log(`[Socket] 發送壓力調整信號至 GM: amount=${finalStress}`, "info");
+                        log(`[Socket] 發送壓力調整信號至 GM: amount=${finalStress}, level=${effectiveSpellLevel}`, "info");
                         game.socket.emit("module.velkora-all-in-one", {
                             action: "stress",
                             amount: finalStress,
-                            effectiveSpellLevel: finalStress,
+                            effectiveSpellLevel: effectiveSpellLevel,
                             actorName: actor.name,
                             actionName: actionText,
                             actorId: actor.id
