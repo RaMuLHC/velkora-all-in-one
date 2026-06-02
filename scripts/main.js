@@ -1356,7 +1356,7 @@ Hooks.on("dnd5e.preUseActivity", (activity, usageConfig, dialogConfig, messageCo
 // ==========================================
 // ⭐ 核心過載管理：施法升階 (preActivityConsumption 攔截)
 // ==========================================
-Hooks.on("dnd5e.preActivityConsumption", async (activity, usageConfig, messageConfig) => {
+Hooks.on("dnd5e.preActivityConsumption", (activity, usageConfig, messageConfig) => {
     console.log("[Velkora] preActivityConsumption hook fired.", { activity, usageConfig, messageConfig });
     const actor = activity.actor;
     if (!actor) return;
@@ -1374,10 +1374,8 @@ Hooks.on("dnd5e.preActivityConsumption", async (activity, usageConfig, messageCo
     // 獲取原始所選環階與 slot 名稱
     let originalSlot = usageConfig.spell?.slot;
     let originalLevel = item.system.level || 0;
-    let isPact = false;
 
     if (originalSlot === "pact") {
-        isPact = true;
         originalLevel = actor.system.spells?.pact?.level || 0;
     } else if (originalSlot && originalSlot.startsWith("spell")) {
         const slotLevel = actor.system.spells?.[originalSlot]?.level;
@@ -1409,12 +1407,7 @@ Hooks.on("dnd5e.preActivityConsumption", async (activity, usageConfig, messageCo
         baseActor.setFlag("velkora-all-in-one", "overloadOriginalLevel", originalLevel);
     }
 
-    // 強制設定為升階後的環階與 scaling，並修改 slot 為目標環階，同時禁用系統自動扣減
-    if (usageConfig.spell) {
-        usageConfig.spell.slot = `spell${targetLevel}`;
-        usageConfig.spell.level = targetLevel;
-        usageConfig.spell.consume = false;
-    }
+    // 更新 scaling 數值（不修改 slot 以防止高環法術位不可用時的系統驗證阻攔）
     usageConfig.scaling = Math.max(0, targetLevel - item.system.level);
 
     if (messageConfig) {
@@ -1430,19 +1423,6 @@ Hooks.on("dnd5e.preActivityConsumption", async (activity, usageConfig, messageCo
         delete item.actor._embeddedPreparation;
         item.prepareFinalAttributes();
         console.log(`[Velkora] [preActivityConsumption] 已成功同步更新 cloned item scaling 至 ${usageConfig.scaling}`);
-    }
-
-    // 手動扣減原始所選的法術位
-    if (originalSlot) {
-        if (isPact) {
-            const currentPact = actor.system.spells?.pact?.value || 0;
-            await actor.update({ "system.spells.pact.value": Math.max(0, currentPact - 1) });
-            log(`[Overload] 手動扣減原契约法術位 1 個，剩餘 ${Math.max(0, currentPact - 1)}`, "info", true);
-        } else {
-            const currentSlots = actor.system.spells?.[originalSlot]?.value || 0;
-            await actor.update({ [`system.spells.${originalSlot}.value`]: Math.max(0, currentSlots - 1) });
-            log(`[Overload] 手動扣減原始法術位 ${originalSlot} 1 個，剩餘 ${Math.max(0, currentSlots - 1)}`, "info", true);
-        }
     }
 });
 
