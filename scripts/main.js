@@ -777,7 +777,9 @@ Hooks.on("midi-qol.preDamageRoll", async (workflow) => {
     if (!actor || !item || item.type !== "spell") return;
 
     // 檢查是否有過載升階 buff 或是已記錄的 overloadOriginalLevel 旗標
-    const overloadOriginalLevel = actor.getFlag("velkora-all-in-one", "overloadOriginalLevel") || 
+    const overloadOriginalLevel = (workflow.velkoraOverloadOriginalLevel !== undefined ? workflow.velkoraOverloadOriginalLevel : undefined) ||
+                                  (workflow.activity?.velkoraOverloadOriginalLevel !== undefined ? workflow.activity.velkoraOverloadOriginalLevel : undefined) ||
+                                  actor.getFlag("velkora-all-in-one", "overloadOriginalLevel") || 
                                   (actor.token ? actor.token.actor.getFlag("velkora-all-in-one", "overloadOriginalLevel") : undefined) ||
                                   (actor.uuid ? fromUuidSync(actor.uuid)?.getFlag("velkora-all-in-one", "overloadOriginalLevel") : undefined);
     const overloadEffect = findOverloadBuff(actor, "Elevation");
@@ -1442,6 +1444,9 @@ Hooks.on("dnd5e.preActivityConsumption", (activity, usageConfig, messageConfig) 
     if (baseActor && baseActor !== actor) {
         baseActor.setFlag("velkora-all-in-one", "overloadOriginalLevel", originalLevel);
     }
+    if (activity) {
+        activity.velkoraOverloadOriginalLevel = originalLevel;
+    }
 
     // 更新 scaling 數值（不修改 slot 以防止高環法術位不可用時的系統驗證阻攔）
     usageConfig.scaling = Math.max(0, targetLevel - item.system.level);
@@ -1597,6 +1602,7 @@ const preItemRollHandler = async (arg1, arg2, arg3) => {
     }
 
     if (workflow) {
+        workflow.velkoraOverloadOriginalLevel = originalLevel;
         workflow.spellLevel = targetLevel;
         if (workflow.castData) {
             workflow.castData.castLevel = targetLevel;
@@ -1807,8 +1813,10 @@ Hooks.on("midi-qol.RollComplete", async (workflow) => {
             
             if (isOverloaded) overloadType = overloadEffect.getFlag?.("velkora-all-in-one", "overloadType") || overloadEffect.flags?.["velkora-all-in-one"]?.overloadType;
 
-            // 嘗試從當前 Actor、Token Actor 或 Base Actor 讀取旗標
-            const overloadOriginalLevel = actor.getFlag("velkora-all-in-one", "overloadOriginalLevel") || 
+            // 嘗試從當前 Actor、Token Actor、Base Actor 或 workflow 讀取旗標
+            const overloadOriginalLevel = (workflow.velkoraOverloadOriginalLevel !== undefined ? workflow.velkoraOverloadOriginalLevel : undefined) ||
+                                          (workflow.activity?.velkoraOverloadOriginalLevel !== undefined ? workflow.activity.velkoraOverloadOriginalLevel : undefined) ||
+                                          actor.getFlag("velkora-all-in-one", "overloadOriginalLevel") || 
                                           (actor.token ? actor.token.actor.getFlag("velkora-all-in-one", "overloadOriginalLevel") : undefined) ||
                                           (actor.uuid ? fromUuidSync(actor.uuid)?.getFlag("velkora-all-in-one", "overloadOriginalLevel") : undefined);
 
