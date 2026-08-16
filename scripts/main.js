@@ -256,6 +256,8 @@ Hooks.once("ready", async () => {
         } else if (data.action === "stress") {
             const targetActor = game.actors.get(data.actorId);
             await processStress(data.amount, data.effectiveSpellLevel, data.actorName, data.actionName, targetActor);
+        } else if (data.action === "pulse") {
+            await processSeasonalPulse(data);
         }
     });
 
@@ -1402,16 +1404,17 @@ Hooks.on("dnd5e.preActivityConsumption", (activity, usageConfig, messageConfig) 
     if (!item || item.type !== "spell") return;
 
     // 檢查是否有過載升階 buff (使用 getFlag 與 raw flags 雙重尋找)
-    const overloadEffect = findOverloadBuff(actor, "Elevation");
+    const overloadEffect = findOverloadBuff(actor);
     console.log("[Velkora] preActivityConsumption overloadEffect found:", overloadEffect);
-    if (!overloadEffect) return;
-
-    // 過載升階僅限於大於 0 環的法術 (排除戲法)
-    if (item.system?.level === 0) return;
+    
+    if (overloadEffect && activity) {
+        activity.velkoraIsOverloaded = true;
+        activity.velkoraOverloadType = overloadEffect.getFlag?.("velkora-all-in-one", "overloadType") || overloadEffect.flags?.["velkora-all-in-one"]?.overloadType;
+    }
 
     // 獲取原始所選環階與 slot 名稱
-    let originalSlot = usageConfig.spell?.slot;
-    let originalLevel = item.system.level || 0;
+    let originalSlot = usageConfig?.spell?.slot;
+    let originalLevel = item.system?.level || 0;
 
     if (originalSlot === "pact") {
         originalLevel = actor.system.spells?.pact?.level || 0;
@@ -1420,10 +1423,18 @@ Hooks.on("dnd5e.preActivityConsumption", (activity, usageConfig, messageConfig) 
         if (slotLevel !== undefined) {
             originalLevel = slotLevel;
         }
-    } else if (usageConfig.spell?.level !== undefined) {
+    } else if (usageConfig?.spell?.level !== undefined) {
         originalLevel = usageConfig.spell.level;
     }
     console.log("[Velkora] preActivityConsumption originalLevel calculated:", originalLevel);
+    
+    // 始終把實際消耗的環階記錄在 activity 上，供後續 RollComplete 穩定取用
+    if (activity) {
+        activity.velkoraOriginalSpellLevel = originalLevel;
+    }
+
+    // 以下邏輯僅處理 Elevation 的升階調整，戲法或非 Elevation 不做 scaling
+    if (!overloadEffect || activity?.velkoraOverloadType !== "Elevation" || item.system?.level === 0) return;
     
     // 計算過載升階目標環階：
     // 9環 -> 不變； 8環 -> 9環 (+1)； 1-7環 -> +2 環
@@ -1569,8 +1580,8 @@ const preItemRollHandler = async (arg1, arg2, arg3) => {
     // 排除戲法
     if (item.system?.level === 0) return;
 
-    // 獲取原始所選環階 (相容 V1 和 V2 簽名，並能正確從 spells 數據中提取實際所選法術位環階)
-    let originalLevel = item.system.level || 0;
+    // 獲取原始所選環階 (優先從 activity 取，相容 V1 和 V2 簽名)
+    let originalLevel = workflow?.activity?.velkoraOriginalSpellLevel ?? item.system.level ?? 0;
     if (workflow && workflow.spellLevel !== undefined) {
         originalLevel = workflow.spellLevel;
     } else if (config && config.spell?.slot) {
@@ -1583,6 +1594,16 @@ const preItemRollHandler = async (arg1, arg2, arg3) => {
     }
     console.log("[Velkora] preItemRoll originalLevel calculated:", originalLevel);
 
+    // 儲存至 workflow 供 RollComplete 取用
+    if (workflow) {
+        workflow.velkoraOverloadOriginalLevel = originalLevel;
+        if (overloadEffect) {
+            workflow.velkoraIsOverloaded = true;
+            workflow.velkoraOverloadType = overloadEffect.getFlag?.("velkora-all-in-one", "overloadType") || overloadEffect.flags?.["velkora-all-in-one"]?.overloadType;
+        }
+    }
+
+    // 計算升階
     let targetLevel = originalLevel;
     if (originalLevel === 8) {
         targetLevel = 9;
@@ -1602,7 +1623,6 @@ const preItemRollHandler = async (arg1, arg2, arg3) => {
     }
 
     if (workflow) {
-        workflow.velkoraOverloadOriginalLevel = originalLevel;
         workflow.spellLevel = targetLevel;
         if (workflow.castData) {
             workflow.castData.castLevel = targetLevel;
@@ -1667,158 +1687,47 @@ Hooks.on("midi-qol.RollComplete", async (workflow) => {
 
     if (item.type === "spell") {
         const isPrimal = isPrimalCaster(actor);
-        let baseSpellLevel = workflow.spellLevel || workflow.castData?.castLevel || workflow.itemLevel || item.system?.level || 0;
+        
+        // 更穩健地獲取原始施法環階 (支援 Midi 14 / D&D 5.3)
+        let baseSpellLevel = workflow.activity?.velkoraOriginalSpellLevel || 
+                             workflow.velkoraOverloadOriginalLevel || 
+                             workflow.spellLevel || 
+                             workflow.castData?.castLevel || 
+                             workflow.itemLevel || 
+                             item.system?.level || 0;
+
+        // 讀取過載狀態 (由 preActivityConsumption 或 preItemRollHandler 注入)
+        const isOverloaded = workflow.activity?.velkoraIsOverloaded || workflow.velkoraIsOverloaded || false;
+        const overloadType = workflow.activity?.velkoraOverloadType || workflow.velkoraOverloadType || "";
+        const overloadOriginalLevel = workflow.velkoraOverloadOriginalLevel !== undefined ? workflow.velkoraOverloadOriginalLevel : baseSpellLevel;
 
         if (isPrimal && baseSpellLevel > 0) {
             if (!game.combat) {
                 log(`不在戰鬥狀態下，施法不觸發季節脈衝或輪轉：角色=${actor.name}, 法術=${item.name}`, "info");
                 return;
             }
-            let currentSeason = actor.getFlag("velkora-all-in-one", "currentSeason") || 1;
-            const rhythmTable = CONFIG.Velkora?.PRIMAL_RHYTHM;
 
-            if (rhythmTable) {
-                let pulseMsg = "";
-                let pulseBg = "rgba(22, 163, 74, 0.08)";
-                let pulseBorder = "#16a34a";
-                let pulseTitleColor = "#16a34a";
-                
-                if (currentSeason === 1) {
-                    const tempHpGain = baseSpellLevel * 2;
-                    let currentTempHp = actor.system.attributes?.hp?.temp || 0;
-                    if (tempHpGain > currentTempHp) {
-                        await actor.update({ "system.attributes.hp.temp": tempHpGain });
-                    }
-                    pulseMsg = game.i18n.format("VELKORA.Chat.PulseSpring", { name: actor.name, temp: tempHpGain });
-                    pulseBg = "rgba(22, 163, 74, 0.08)";
-                    pulseBorder = "#16a34a";
-                    pulseTitleColor = "#16a34a";
-                } else if (currentSeason === 2) {
-                    pulseMsg = game.i18n.localize("VELKORA.Chat.PulseSummer");
-                    pulseBg = "rgba(220, 38, 38, 0.08)";
-                    pulseBorder = "#dc2626";
-                    pulseTitleColor = "#dc2626";
-                } else if (currentSeason === 3) {
-                    let chatMessage = null;
-                    if (workflow.chatMessage) chatMessage = workflow.chatMessage;
-                    else if (workflow.itemCardId) chatMessage = game.messages.get(workflow.itemCardId);
-                    else if (workflow.chatCard) {
-                        if (typeof workflow.chatCard.getFlag === "function") chatMessage = workflow.chatCard;
-                        else if (workflow.chatCard.id) chatMessage = game.messages.get(workflow.chatCard.id);
-                    }
-                    const ignoredType = chatMessage?.getFlag("velkora-all-in-one", "autumnIgnoredType") || workflow.autumnIgnoredType || actor.getFlag("velkora-all-in-one", "autumnIgnoredType");
+            const pulseData = {
+                action: "pulse",
+                actorId: actor.id,
+                itemId: item.id,
+                baseSpellLevel: baseSpellLevel,
+                tokenId: workflow.token?.id || canvas.tokens?.placeables?.find(t => t.actor?.id === actor.id)?.id,
+                autumnIgnoredType: workflow.autumnIgnoredType || actor.getFlag("velkora-all-in-one", "autumnIgnoredType")
+            };
 
-                    if (ignoredType) {
-                        const systemLabel = CONFIG.DND5E?.damageTypes?.[ignoredType]?.label || ignoredType;
-                        const localizedLabel = game.i18n.localize(systemLabel);
-                        const typeLabel = `${localizedLabel} (${ignoredType.charAt(0).toUpperCase() + ignoredType.slice(1)})`;
-                        pulseMsg = game.i18n.format("VELKORA.Chat.PulseAutumn", { type: typeLabel });
-                    } else {
-                        pulseMsg = game.i18n.localize("VELKORA.Chat.PulseAutumnNone");
-                    }
-                    pulseBg = "rgba(217, 119, 6, 0.08)";
-                    pulseBorder = "#d97706";
-                    pulseTitleColor = "#d97706";
-                } else if (currentSeason === 4) {
-                    pulseMsg = game.i18n.localize("VELKORA.Chat.PulseWinter");
-                    pulseBg = "rgba(37, 99, 235, 0.08)";
-                    pulseBorder = "#2563eb";
-                    pulseTitleColor = "#2563eb";
-                    
-                    // 生成冰霜區域 MeasuredTemplate 模板
-                    const token = workflow.token || canvas.tokens.placeables.find(t => t.actor?.id === actor.id);
-                    if (token) {
-                        const templateData = {
-                            t: "circle",
-                            user: game.user.id,
-                            x: token.center.x,
-                            y: token.center.y,
-                            distance: 10,
-                            direction: 0,
-                            angle: 360,
-                            fillColor: "#93c5fd",
-                            flags: {
-                                "velkora-all-in-one": {
-                                    isWinterZone: true,
-                                    spellDc: actor.system?.attributes?.spell?.dc || actor.system?.attributes?.spelldc || 10,
-                                    casterCombatantId: game.combat?.combatants.find(c => c.actor?.id === actor.id)?.id || null,
-                                    casterActorId: actor.id,
-                                    remainingTurns: 2,
-                                    createdAt: game.time.worldTime
-                                }
-                            }
-                        };
-                        
-                        try {
-                            const [doc] = await canvas.scene.createEmbeddedDocuments("MeasuredTemplate", [templateData]);
-                            if (doc) {
-                                log(`已成功生成凜冬冰霜區域模板。`, "info");
-                                
-                                // 非戰鬥中：12秒後自動刪除
-                                if (!game.combat) {
-                                    setTimeout(async () => {
-                                        try {
-                                            const t = canvas.scene.templates.get(doc.id);
-                                            if (t) {
-                                                await t.delete();
-                                                log(`非戰鬥狀態，12秒時間已到，已刪除凜冬冰霜區域模板。`, "info");
-                                            }
-                                        } catch (e) {
-                                            log(`自動刪除凜冬冰霜區域模板時出錯：${e.message}`, "warn");
-                                        }
-                                    }, 12000);
-                                }
-                            }
-                        } catch (e) {
-                            log(`生成凜冬冰霜區域模板時出錯：${e.message}`, "error");
-                        }
-                    }
+            if (game.user.isGM) {
+                await processSeasonalPulse(pulseData);
+            } else {
+                const activeGM = game.users.find(u => u.isGM && u.active);
+                if (activeGM) {
+                    game.socket.emit("module.velkora-all-in-one", pulseData);
+                } else {
+                    ui.notifications.warn(game.i18n.localize("VELKORA.Notifications.NoActiveGm"));
                 }
-
-                const seasonalPulseTitle = game.i18n.format("VELKORA.Chat.PulseTitle", { name: rhythmTable[currentSeason]?.name ? game.i18n.localize(rhythmTable[currentSeason].name) : "" });
-
-                // 發送第一張卡：脈衝效果結算
-                ChatMessage.create({
-                    speaker: ChatMessage.getSpeaker({ actor: actor }),
-                    content: `
-                        <div style="background: ${pulseBg}; padding: 8px; border-left: 4px solid ${pulseBorder}; border-radius: 3px;">
-                            <h3 style="color: ${pulseTitleColor}; margin:0 0 4px 0; font-weight: bold;">${seasonalPulseTitle}</h3>
-                            ${pulseMsg}
-                        </div>
-                    `
-                });
-
-                // 延遲清理可能存在的死秋 flag，避免與 GM 端的 preTargetDamageApplication 發生競爭
-                setTimeout(async () => {
-                    try {
-                        const currentFlag = actor.getFlag("velkora-all-in-one", "autumnIgnoredType");
-                        if (currentFlag) {
-                            await actor.unsetFlag("velkora-all-in-one", "autumnIgnoredType");
-                            log(`死秋脈衝：已清理 Actor ${actor.name} 的無視抗性 Flag。`, "info");
-                        }
-                    } catch (e) {
-                        // 避免非同步調用報錯
-                    }
-                }, 2000);
-
-                // 自動輪轉到下一個季節
-                let nextSeason = currentSeason >= 4 ? 1 : currentSeason + 1;
-                await setActorSeason(actor, nextSeason, "施法共鳴");
             }
         } else {
             // 奧術/神術施法者處理壓力結算
-            const overloadEffect = findOverloadBuff(actor);
-            const isOverloaded = !!overloadEffect;
-            let overloadType = "";
-            
-            if (isOverloaded) overloadType = overloadEffect.getFlag?.("velkora-all-in-one", "overloadType") || overloadEffect.flags?.["velkora-all-in-one"]?.overloadType;
-
-            // 嘗試從當前 Actor、Token Actor、Base Actor 或 workflow 讀取旗標
-            const overloadOriginalLevel = (workflow.velkoraOverloadOriginalLevel !== undefined ? workflow.velkoraOverloadOriginalLevel : undefined) ||
-                                          (workflow.activity?.velkoraOverloadOriginalLevel !== undefined ? workflow.activity.velkoraOverloadOriginalLevel : undefined) ||
-                                          actor.getFlag("velkora-all-in-one", "overloadOriginalLevel") || 
-                                          (actor.token ? actor.token.actor.getFlag("velkora-all-in-one", "overloadOriginalLevel") : undefined) ||
-                                          (actor.uuid ? fromUuidSync(actor.uuid)?.getFlag("velkora-all-in-one", "overloadOriginalLevel") : undefined);
 
             const originalLevel = (overloadType === "Elevation" && overloadOriginalLevel !== undefined) ? overloadOriginalLevel : baseSpellLevel;
 
@@ -1994,6 +1903,127 @@ async function applySutureExecution(actor, actorName, spellLevel) {
 // ==========================================
 // ⭐ 核心壓力結算與內聯撤銷引擎
 // ==========================================
+
+async function processSeasonalPulse(data) {
+    if (!game.user.isGM) return;
+    const actor = game.actors.get(data.actorId);
+    if (!actor) return;
+    
+    let currentSeason = actor.getFlag("velkora-all-in-one", "currentSeason") || 1;
+    const rhythmTable = CONFIG.Velkora?.PRIMAL_RHYTHM;
+
+    if (rhythmTable) {
+        let pulseMsg = "";
+        let pulseBg = "rgba(22, 163, 74, 0.08)";
+        let pulseBorder = "#16a34a";
+        let pulseTitleColor = "#16a34a";
+        
+        if (currentSeason === 1) {
+            const tempHpGain = data.baseSpellLevel * 2;
+            let currentTempHp = actor.system.attributes?.hp?.temp || 0;
+            if (tempHpGain > currentTempHp) {
+                await actor.update({ "system.attributes.hp.temp": tempHpGain });
+            }
+            pulseMsg = game.i18n.format("VELKORA.Chat.PulseSpring", { name: actor.name, temp: tempHpGain });
+            pulseBg = "rgba(22, 163, 74, 0.08)";
+            pulseBorder = "#16a34a";
+            pulseTitleColor = "#16a34a";
+        } else if (currentSeason === 2) {
+            pulseMsg = game.i18n.localize("VELKORA.Chat.PulseSummer");
+            pulseBg = "rgba(220, 38, 38, 0.08)";
+            pulseBorder = "#dc2626";
+            pulseTitleColor = "#dc2626";
+        } else if (currentSeason === 3) {
+            const ignoredType = data.autumnIgnoredType;
+            if (ignoredType) {
+                const systemLabel = CONFIG.DND5E?.damageTypes?.[ignoredType]?.label || ignoredType;
+                const localizedLabel = game.i18n.localize(systemLabel);
+                const typeLabel = `${localizedLabel} (${ignoredType.charAt(0).toUpperCase() + ignoredType.slice(1)})`;
+                pulseMsg = game.i18n.format("VELKORA.Chat.PulseAutumn", { type: typeLabel });
+            } else {
+                pulseMsg = game.i18n.localize("VELKORA.Chat.PulseAutumnNone");
+            }
+            pulseBg = "rgba(217, 119, 6, 0.08)";
+            pulseBorder = "#d97706";
+            pulseTitleColor = "#d97706";
+        } else if (currentSeason === 4) {
+            pulseMsg = game.i18n.localize("VELKORA.Chat.PulseWinter");
+            pulseBg = "rgba(37, 99, 235, 0.08)";
+            pulseBorder = "#2563eb";
+            pulseTitleColor = "#2563eb";
+            
+            const token = canvas.tokens?.get(data.tokenId) || canvas.tokens?.placeables?.find(t => t.actor?.id === actor.id);
+            if (token) {
+                const templateData = {
+                    t: "circle",
+                    user: game.user.id,
+                    x: token.center.x,
+                    y: token.center.y,
+                    distance: 10,
+                    direction: 0,
+                    angle: 360,
+                    fillColor: "#93c5fd",
+                    flags: {
+                        "velkora-all-in-one": {
+                            isWinterZone: true,
+                            spellDc: actor.system?.attributes?.spell?.dc || actor.system?.attributes?.spelldc || 10,
+                            casterCombatantId: game.combat?.combatants.find(c => c.actor?.id === actor.id)?.id || null,
+                            casterActorId: actor.id,
+                            remainingTurns: 2,
+                            createdAt: game.time.worldTime
+                        }
+                    }
+                };
+                
+                try {
+                    const [doc] = await canvas.scene.createEmbeddedDocuments("MeasuredTemplate", [templateData]);
+                    if (doc) {
+                        log(`已成功生成凜冬冰霜區域模板。`, "info");
+                        if (!game.combat) {
+                            setTimeout(async () => {
+                                try {
+                                    const t = canvas.scene.templates.get(doc.id);
+                                    if (t) {
+                                        await t.delete();
+                                        log(`非戰鬥狀態，12秒時間已到，已刪除凜冬冰霜區域模板。`, "info");
+                                    }
+                                } catch (e) {
+                                    log(`自動刪除凜冬冰霜區域模板時出錯：${e.message}`, "warn");
+                                }
+                            }, 12000);
+                        }
+                    }
+                } catch (e) {
+                    log(`生成凜冬冰霜區域模板時出錯：${e.message}`, "error");
+                }
+            }
+        }
+
+        const seasonalPulseTitle = game.i18n.format("VELKORA.Chat.PulseTitle", { name: rhythmTable[currentSeason]?.name ? game.i18n.localize(rhythmTable[currentSeason].name) : "" });
+
+        ChatMessage.create({
+            speaker: ChatMessage.getSpeaker({ actor: actor }),
+            content: `
+                <div style="background: ${pulseBg}; padding: 8px; border-left: 4px solid ${pulseBorder}; border-radius: 3px;">
+                    <h3 style="color: ${pulseTitleColor}; margin:0 0 4px 0; font-weight: bold;">${seasonalPulseTitle}</h3>
+                    ${pulseMsg}
+                </div>
+            `
+        });
+
+        setTimeout(async () => {
+            try {
+                if (actor.getFlag("velkora-all-in-one", "autumnIgnoredType")) {
+                    await actor.unsetFlag("velkora-all-in-one", "autumnIgnoredType");
+                    log(`死秋脈衝：已清理 Actor ${actor.name} 的無視抗性 Flag。`, "info");
+                }
+            } catch (e) {}
+        }, 2000);
+
+        let nextSeason = currentSeason >= 4 ? 1 : currentSeason + 1;
+        await setActorSeason(actor, nextSeason, "施法共鳴");
+    }
+}
 async function processStress(amount, effectiveSpellLevel, actorName = "系統", actionName = "調整", actor = null, hpLossData = null, sutureDamage = 0) {
     let currentStress = game.settings.get("velkora-all-in-one", "stressValue");
     if (isNaN(currentStress) || currentStress === null) {
