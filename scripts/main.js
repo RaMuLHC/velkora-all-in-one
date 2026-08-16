@@ -805,20 +805,6 @@ Hooks.on("midi-qol.preDamageRoll", async (workflow) => {
                 await baseActor.setFlag("velkora-all-in-one", "overloadOriginalLevel", originalLevel);
             }
 
-            workflow.spellLevel = targetLevel;
-            if (workflow.castData) {
-                workflow.castData.castLevel = targetLevel;
-            }
-            
-            const scaling = Math.max(0, targetLevel - item.system.level);
-            
-            // 寫入複製的 item
-            if (workflow.item) {
-                workflow.item.updateSource({ "flags.dnd5e.scaling": scaling });
-                if (!workflow.item.flags.dnd5e) workflow.item.flags.dnd5e = {};
-                workflow.item.flags.dnd5e.scaling = scaling;
-                
-                if (workflow.item.actor) workflow.item.actor._embeddedPreparation = true;
                 workflow.item.prepareData();
                 if (workflow.item.actor) delete workflow.item.actor._embeddedPreparation;
             }
@@ -1397,41 +1383,44 @@ Hooks.on("dnd5e.preUseActivity", (activity, usageConfig, dialogConfig, messageCo
 // ⭐ 核心過載管理：施法升階 (preActivityConsumption 攔截)
 // ==========================================
 Hooks.on("dnd5e.preActivityConsumption", (activity, usageConfig, messageConfig) => {
-    console.log("[Velkora] preActivityConsumption hook fired.", { activity, usageConfig, messageConfig });
-    const actor = activity.actor;
-    if (!actor) return;
-    const item = activity.item;
-    if (!item || item.type !== "spell") return;
+    try {
+        console.log("[Velkora] preActivityConsumption hook fired.", { activity, usageConfig, messageConfig });
+        const actor = activity.actor;
+        if (!actor) return;
+        const item = activity.item;
+        if (!item || item.type !== "spell") return;
 
-    // 檢查是否有過載升階 buff (使用 getFlag 與 raw flags 雙重尋找)
-    const overloadEffect = findOverloadBuff(actor);
-    console.log("[Velkora] preActivityConsumption overloadEffect found:", overloadEffect);
-    
-    if (overloadEffect && activity) {
-        activity.velkoraIsOverloaded = true;
-        activity.velkoraOverloadType = overloadEffect.getFlag?.("velkora-all-in-one", "overloadType") || overloadEffect.flags?.["velkora-all-in-one"]?.overloadType;
-    }
-
-    // 獲取原始所選環階與 slot 名稱
-    let originalSlot = usageConfig?.spell?.slot;
-    let originalLevel = item.system?.level || 0;
-
-    if (originalSlot === "pact") {
-        originalLevel = actor.system.spells?.pact?.level || 0;
-    } else if (originalSlot && originalSlot.startsWith("spell")) {
-        const slotLevel = actor.system.spells?.[originalSlot]?.level;
-        if (slotLevel !== undefined) {
-            originalLevel = slotLevel;
+        // 檢查是否有過載升階 buff (使用 getFlag 與 raw flags 雙重尋找)
+        const overloadEffect = findOverloadBuff(actor);
+        console.log("[Velkora] preActivityConsumption overloadEffect found:", overloadEffect);
+        
+        if (overloadEffect && activity) {
+            activity.velkoraIsOverloaded = true;
+            activity.velkoraOverloadType = overloadEffect.getFlag?.("velkora-all-in-one", "overloadType") || overloadEffect.flags?.["velkora-all-in-one"]?.overloadType;
         }
-    } else if (usageConfig?.spell?.level !== undefined) {
-        originalLevel = usageConfig.spell.level;
-    }
-    console.log("[Velkora] preActivityConsumption originalLevel calculated:", originalLevel);
-    
-    // 始終把實際消耗的環階記錄在 activity 上，供後續 RollComplete 穩定取用
-    if (activity) {
-        activity.velkoraOriginalSpellLevel = originalLevel;
-    }
+
+        // 獲取原始所選環階與 slot 名稱
+        let originalSlot = usageConfig?.spell?.slot;
+        let originalLevel = item.system?.level || 0;
+
+        if (originalSlot === "pact") {
+            originalLevel = actor.system.spells?.pact?.level || 0;
+        } else if (typeof originalSlot === "string" && originalSlot.startsWith("spell")) {
+            const slotLevel = actor.system.spells?.[originalSlot]?.level;
+            if (slotLevel !== undefined) {
+                originalLevel = slotLevel;
+            }
+        } else if (typeof originalSlot === "number") {
+            originalLevel = originalSlot;
+        } else if (usageConfig?.spell?.level !== undefined) {
+            originalLevel = usageConfig.spell.level;
+        }
+        console.log("[Velkora] preActivityConsumption originalLevel calculated:", originalLevel);
+        
+        // 始終把實際消耗的環階記錄在 activity 上，供後續 RollComplete 穩定取用
+        if (activity) {
+            activity.velkoraOriginalSpellLevel = originalLevel;
+        }
 
     // 以下邏輯僅處理 Elevation 的升階調整，戲法或非 Elevation 不做 scaling
     if (!overloadEffect || activity?.velkoraOverloadType !== "Elevation" || item.system?.level === 0) return;
@@ -1484,6 +1473,9 @@ Hooks.on("dnd5e.preActivityConsumption", (activity, usageConfig, messageConfig) 
         originalItem.setFlag("dnd5e", "scaling", usageConfig.scaling).then(() => {
             log(`[preActivityConsumption] 異步寫入原始物品 scaling 旗標為 ${usageConfig.scaling}`, "info");
         });
+    }
+    } catch (e) {
+        console.error("[Velkora] preActivityConsumption encountered an error:", e);
     }
 });
 
@@ -1541,13 +1533,14 @@ Hooks.on("midi-qol.preTargeting", (arg) => {
 // ⭐ 核心過載管理：Midi-QOL 施法升階等級修正
 // ==========================================
 const preItemRollHandler = async (arg1, arg2, arg3) => {
-    console.log("[Velkora] preItemRoll hook fired.");
-    let workflow = null;
-    let config = null;
-    let item = null;
-    let actor = null;
+    try {
+        console.log("[Velkora] preItemRoll hook fired.");
+        let workflow = null;
+        let config = null;
+        let item = null;
+        let actor = null;
 
-    if (arg1 && (arg1.constructor?.name === "Workflow" || (arg1.item && !arg1.system))) {
+        if (arg1 && (arg1.constructor?.name === "Workflow" || (arg1.item && !arg1.system))) {
         // V2 Signature: (workflow, usage, dialog, message)
         workflow = arg1;
         config = arg2;
@@ -1665,6 +1658,9 @@ const preItemRollHandler = async (arg1, arg2, arg3) => {
         }
         config.scaling = Math.max(0, targetLevel - item.system.level);
     }
+    } catch (e) {
+        console.error("[Velkora] preItemRollHandler encountered an error:", e);
+    }
 };
 
 Hooks.on("midi-qol.preItemRoll", preItemRollHandler);
@@ -1674,10 +1670,11 @@ Hooks.on("midi-qol.preItemRollV2", preItemRollHandler);
 // ⭐ 核心結算引擎：RollComplete
 // ==========================================
 Hooks.on("midi-qol.RollComplete", async (workflow) => {
-    const rollingUser = workflow.user || game.users.get(workflow.userId);
-    if (rollingUser && rollingUser.id !== game.user.id) return;
+    try {
+        const rollingUser = workflow.user || game.users.get(workflow.userId);
+        if (rollingUser && rollingUser.id !== game.user.id) return;
 
-    let actor = workflow.actor;
+        let actor = workflow.actor;
     let item = workflow.item;
     if (workflow.activity) {
         actor = workflow.activity.actor;
