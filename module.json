@@ -5,7 +5,7 @@
   "version": "1.1.11",
   "url": "https://github.com/RaMuLHC/velkora-all-in-one",
   "manifest": "https://raw.githubusercontent.com/RaMuLHC/velkora-all-in-one/main/module.json",
-  "download": "https://github.com/RaMuLHC/velkora-all-in-one/releases/download/v1.1.11/velkora-all-in-one.zip",
+  "download": "https://github.com/RaMuLHC/velkora-all-in-one/archive/refs/heads/main.zip",
   "compatibility": {
     "minimum": "13",
     "verified": "13"
